@@ -1,0 +1,39 @@
+# Cortexarr configuration
+# Copy to <install_dir>/config.yaml, or set CORTEXARR_CONFIG=/path/to/config.yaml,
+# then restart the service.
+#
+# install.sh generates config.yaml from this file automatically and fills in
+# secret_key + credential_key — edit config.yaml afterwards for any further
+# changes.
+#
+# Monitored services (Sonarr/Radarr/Seerr/download clients), notification
+# rules, and every other runtime setting are managed via the UI/API and
+# stored in SQLite. This file only covers infrastructure/startup settings.
+
+# -- Server --------------------------------------------------------------------
+host: "0.0.0.0"
+port: 8770
+workers: 2
+debug: false
+
+# -- App root — install.sh appends this automatically --------------------------
+# install_dir: "/opt/cortexarr"
+
+# -- SQLite app database (optional override; default: <install_dir>/cortexarr.db) --
+# db_path: "/opt/cortexarr/cortexarr.db"
+
+# -- JWT (generate with: openssl rand -hex 32) ----------------------------------
+secret_key: "CHANGE_ME_generate_with_openssl_rand_hex_32"
+
+# -- Credential encryption key, for monitored-service API keys and notification
+# provider secrets stored at rest (generate with the Fernet command below) --
+# python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+credential_key: "CHANGE_ME_generate_with_fernet_generate_key"
+
+# -- CORS (restrict to your actual origin in production) -----------------------
+cors_origins:
+  - "http://SERVER-IP:8770"
+
+# -- Logging ---------------------------------------------------------------------
+log_level: "info"
+# log_file: "/opt/cortexarr/logs/cortexarr.log"   # optional override
