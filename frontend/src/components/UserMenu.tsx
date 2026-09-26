@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { api, ApiError } from '../api/client'
 
 export default function UserMenu() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
@@ -68,6 +70,15 @@ export default function UserMenu() {
               <div className="px-2 py-1 text-xs text-slate-500">
                 Signed in as <span className="text-slate-300">{user?.username}</span> ({user?.role})
               </div>
+              <button
+                onClick={() => {
+                  setOpen(false)
+                  navigate('/settings')
+                }}
+                className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
+              >
+                Settings
+              </button>
               <button
                 onClick={() => setChangingPassword(true)}
                 className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"

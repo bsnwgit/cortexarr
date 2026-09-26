@@ -1,0 +1,32 @@
+// Per-service-type accent, so a service's own section of the dashboard reads
+// in that service's own brand color instead of the app's global violet —
+// e.g. Sonarr's teal (the color at the center of its own icon/app). The app
+// chrome (header, login, nav) stays violet; only service-specific UI (its
+// dashboard card, its detail page's tabs) picks up the accent. Unmapped
+// types fall back to the app's violet, same as before any type had its own.
+export interface ServiceAccent {
+  text: string
+  bg: string
+  border: string
+  hoverBorder: string
+}
+
+const DEFAULT_ACCENT: ServiceAccent = {
+  text: 'text-violet-300',
+  bg: 'bg-violet-600/20',
+  border: 'border-violet-600/40',
+  hoverBorder: 'hover:border-violet-600/40',
+}
+
+const ACCENTS: Record<string, ServiceAccent> = {
+  sonarr: {
+    text: 'text-teal-300',
+    bg: 'bg-teal-600/20',
+    border: 'border-teal-600/40',
+    hoverBorder: 'hover:border-teal-600/40',
+  },
+}
+
+export function getServiceAccent(type: string): ServiceAccent {
+  return ACCENTS[type] ?? DEFAULT_ACCENT
+}

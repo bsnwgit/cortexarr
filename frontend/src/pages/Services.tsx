@@ -1,6 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
+import ServiceIcon from '../components/ServiceIcon'
+import StatusPill, { type StatusInfo } from '../components/StatusPill'
 
 interface Service {
   id: number
@@ -27,6 +30,7 @@ const EMPTY_FORM = {
 }
 
 export default function Services() {
+  const navigate = useNavigate()
   const [services, setServices] = useState<Service[]>([])
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -36,13 +40,22 @@ export default function Services() {
   const [error, setError] = useState('')
   const [rowBusy, setRowBusy] = useState<Record<number, string>>({})
   const [rowTestResult, setRowTestResult] = useState<Record<number, { ok: boolean; message: string }>>({})
+  const [statusById, setStatusById] = useState<Record<number, StatusInfo>>({})
 
   async function load() {
     setServices(await api.get<Service[]>('/services/'))
   }
 
+  async function loadStatus() {
+    const data = await api.get<{ services: (StatusInfo & { id: number })[] }>('/status/')
+    setStatusById(Object.fromEntries(data.services.map((s) => [s.id, s])))
+  }
+
   useEffect(() => {
     load()
+    loadStatus()
+    const interval = setInterval(loadStatus, 15000)
+    return () => clearInterval(interval)
   }, [])
 
   async function testUnsaved() {
@@ -78,7 +91,7 @@ export default function Services() {
   async function toggleMaintenance(s: Service) {
     setRowBusy((b) => ({ ...b, [s.id]: 'saving' }))
     await api.patch(`/services/${s.id}`, { maintenance_mode: !s.maintenance_mode })
-    await load()
+    await Promise.all([load(), loadStatus()])
     setRowBusy((b) => ({ ...b, [s.id]: '' }))
   }
 
@@ -168,16 +181,38 @@ export default function Services() {
 
       <div className="space-y-2">
         {services.map((s) => (
-          <div key={s.id} className="bg-slate-925 border border-slate-800 rounded-xl p-4">
+          <div
+            key={s.id}
+            onClick={() => navigate(`/services/${s.id}`)}
+            role="link"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') navigate(`/services/${s.id}`)
+            }}
+            className="cursor-pointer bg-slate-925 border border-slate-800 rounded-xl p-4 hover:border-violet-600/40 transition-colors"
+          >
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
               <div>
-                <div className="font-medium text-slate-100">{s.name}</div>
+                <div className="flex items-center gap-2 font-medium text-slate-100">
+                  <ServiceIcon type={s.type} className="w-5 h-5 rounded-sm shrink-0" />
+                  {s.name}
+                  <StatusPill service={statusById[s.id] ?? { maintenance_mode: s.maintenance_mode, status: null }} />
+                </div>
                 <div className="text-xs text-slate-500">
-                  {s.type} · {s.base_url} · every {s.poll_interval_seconds}s
-                  {s.maintenance_mode && <span className="text-amber-400"> · maintenance</span>}
+                  {s.type} ·{' '}
+                  <a
+                    href={s.base_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="hover:text-slate-300 hover:underline"
+                  >
+                    {s.base_url}
+                  </a>{' '}
+                  · every {s.poll_interval_seconds}s
                 </div>
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => testSaved(s.id)} disabled={rowBusy[s.id] === 'testing'} className="btn-secondary">
                   {rowBusy[s.id] === 'testing' ? 'Testing…' : 'Test'}
                 </button>

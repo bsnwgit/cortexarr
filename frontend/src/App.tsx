@@ -6,8 +6,9 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Services from './pages/Services'
 import ServiceDetail from './pages/ServiceDetail'
+import SeriesSeasons from './pages/SeriesSeasons'
 import SettingsPage from './pages/Settings'
-import Audit from './pages/Audit'
+import Logs from './pages/Logs'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -31,8 +32,9 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="services" element={<Services />} />
         <Route path="services/:id" element={<ServiceDetail />} />
+        <Route path="services/:id/series/:seriesId" element={<SeriesSeasons />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="audit" element={<Audit />} />
+        <Route path="logs" element={<Logs />} />
       </Route>
     </Routes>
   )
