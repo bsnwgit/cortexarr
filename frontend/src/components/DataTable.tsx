@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { PageControls, PageSizeSelect } from './Pagination'
 
 // Generic table used by ServiceDetail's tabs (queue/wanted/calendar/series/
 // history) and meant to be reused as-is by future services' detail views —
@@ -18,9 +19,25 @@ export interface Column<T> {
   // contributes nothing to "All columns" either, since there's no matching
   // raw field) — for a column that's pure computed/derived display.
   filterable?: boolean
+  // Raw field to read for sorting, when it differs from filterKey/key (same
+  // reasoning as filterKey — a computed column needs a real field to sort by).
+  sortKey?: string
+  // false hides the column's header sort control — for a column with
+  // nothing sortable behind it (e.g. an actions column).
+  sortable?: boolean
 }
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
+function sortRawValue<T>(row: T, col: Column<T>): unknown {
+  return (row as Record<string, unknown>)[col.sortKey ?? col.filterKey ?? col.key]
+}
+
+function compareValues(a: unknown, b: unknown): number {
+  if (a == null && b == null) return 0
+  if (a == null) return 1
+  if (b == null) return -1
+  if (typeof a === 'number' && typeof b === 'number') return a - b
+  return String(a).localeCompare(String(b))
+}
 
 // Substring match against a chosen subset of a row's columns (or all of
 // them) — no other per-column configuration needed, so a new view/column
@@ -40,58 +57,6 @@ function rowMatches<T>(row: T, query: string, columns: Column<T>[], scope: Set<s
     if (String(value).toLowerCase().includes(q)) return true
   }
   return false
-}
-
-function pageWindow(current: number, total: number): (number | '…')[] {
-  const delta = 1
-  const left = Math.max(2, current - delta)
-  const right = Math.min(total - 1, current + delta)
-  const range: (number | '…')[] = [1]
-  if (left > 2) range.push('…')
-  for (let i = left; i <= right; i++) range.push(i)
-  if (right < total - 1) range.push('…')
-  if (total > 1) range.push(total)
-  return range
-}
-
-function Pagination({
-  page, totalPages, onChange,
-}: { page: number; totalPages: number; onChange: (p: number) => void }) {
-  return (
-    <div className="flex items-center gap-1 flex-wrap">
-      <button
-        onClick={() => onChange(page - 1)}
-        disabled={page <= 1}
-        className="px-2.5 py-1 rounded-lg text-sm border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-      >
-        Prev
-      </button>
-      {pageWindow(page, totalPages).map((p, i) =>
-        p === '…' ? (
-          <span key={`ellipsis-${i}`} className="px-2 text-slate-500 text-sm">…</span>
-        ) : (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={
-              p === page
-                ? 'px-3 py-1 rounded-lg text-sm bg-violet-600/20 text-violet-300 border border-violet-600/40'
-                : 'px-3 py-1 rounded-lg text-sm border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }
-          >
-            {p}
-          </button>
-        ),
-      )}
-      <button
-        onClick={() => onChange(page + 1)}
-        disabled={page >= totalPages}
-        className="px-2.5 py-1 rounded-lg text-sm border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-      >
-        Next
-      </button>
-    </div>
-  )
 }
 
 function ColumnFilterPicker<T>({
@@ -153,28 +118,53 @@ export default function DataTable<T extends { id?: number | string }>({
   emptyMessage,
   rowKey,
   defaultPageSize = 25,
+  initialQuery = '',
+  initialFilterScope = [],
 }: {
   columns: Column<T>[]
   rows: T[]
   emptyMessage: string
   rowKey: (row: T, index: number) => string | number
   defaultPageSize?: number
+  // Seeds the filter box/scope on first render — e.g. arriving from the
+  // dashboard already scoped to one series, rather than the user retyping it.
+  initialQuery?: string
+  initialFilterScope?: string[]
 }) {
-  const [query, setQuery] = useState('')
-  const [filterScope, setFilterScope] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState(initialQuery)
+  const [filterScope, setFilterScope] = useState<Set<string>>(new Set(initialFilterScope))
   const [pageSize, setPageSize] = useState(defaultPageSize)
   const [page, setPage] = useState(1)
+  const [sortKey, setSortKey] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const filtered = useMemo(
     () => rows.filter((r) => rowMatches(r, query, columns, filterScope)),
     [rows, query, columns, filterScope],
   )
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered
+    const col = columns.find((c) => c.key === sortKey)
+    if (!col) return filtered
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => compareValues(sortRawValue(a, col), sortRawValue(b, col)) * dir)
+  }, [filtered, columns, sortKey, sortDir])
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const page_ = Math.min(page, totalPages)
   const pageRows = useMemo(
-    () => filtered.slice((page_ - 1) * pageSize, page_ * pageSize),
-    [filtered, page_, pageSize],
+    () => sorted.slice((page_ - 1) * pageSize, page_ * pageSize),
+    [sorted, page_, pageSize],
   )
+
+  function toggleSort(col: Column<T>) {
+    if (col.sortable === false) return
+    if (sortKey === col.key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(col.key)
+      setSortDir('asc')
+    }
+  }
 
   return (
     <div>
@@ -199,22 +189,14 @@ export default function DataTable<T extends { id?: number | string }>({
           />
         </div>
         <div className="flex items-center gap-3 flex-wrap sm:justify-end">
-          <label className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
-            Rows per page
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value))
-                setPage(1)
-              }}
-              className="rounded-lg bg-slate-950 border border-slate-800 px-2 py-1 text-sm text-slate-100"
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </label>
-          {totalPages > 1 && <Pagination page={page_} totalPages={totalPages} onChange={setPage} />}
+          <PageSizeSelect
+            value={pageSize}
+            onChange={(n) => {
+              setPageSize(n)
+              setPage(1)
+            }}
+          />
+          {totalPages > 1 && <PageControls page={page_} totalPages={totalPages} onChange={setPage} />}
         </div>
       </div>
 
@@ -230,7 +212,19 @@ export default function DataTable<T extends { id?: number | string }>({
                 <tr className="text-left text-slate-400 border-b border-slate-800">
                   {columns.map((c) => (
                     <th key={c.key} className="font-medium py-2 px-3 whitespace-nowrap">
-                      {c.label}
+                      {c.sortable === false ? (
+                        c.label
+                      ) : (
+                        <button
+                          onClick={() => toggleSort(c)}
+                          className="flex items-center gap-1 hover:text-slate-200"
+                        >
+                          {c.label}
+                          <span className="w-3 inline-block text-slate-500">
+                            {sortKey === c.key ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                          </span>
+                        </button>
+                      )}
                     </th>
                   ))}
                 </tr>

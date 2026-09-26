@@ -29,7 +29,7 @@ _MASK = "••••••••"
 # same get_queue/get_wanted_missing/get_calendar/get_series/get_history
 # function names and one entry here — the route and dispatch below don't change.
 _DETAIL_CLIENTS = {"sonarr": sonarr_client}
-_DETAIL_VIEWS = {"queue", "wanted", "calendar", "series", "history"}
+_DETAIL_VIEWS = {"queue", "wanted", "series", "history"}  # calendar has its own route — it takes start/end
 
 
 class ServiceCreate(BaseModel):
@@ -210,6 +210,23 @@ async def latest_health(service_id: int, user: CurrentUser, db: aiosqlite.Connec
     return out
 
 
+async def _get_service_and_client(service_id: int, db: aiosqlite.Connection):
+    """Shared by every route below that needs a service row plus its
+    dispatched client (read or write) — one 404/400 shape instead of three
+    copies of it."""
+    async with db.execute("SELECT * FROM service_instances WHERE id = ?", (service_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    client = _DETAIL_CLIENTS.get(row["type"])
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{row['type']}' isn't built yet — only {sorted(_DETAIL_CLIENTS)} for now",
+        )
+    return row, client
+
+
 @router.get("/{service_id}/detail/{view}")
 async def service_detail(
     service_id: int, view: str, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
@@ -221,22 +238,11 @@ async def service_detail(
     if view not in _DETAIL_VIEWS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown view: {view}")
 
-    async with db.execute("SELECT * FROM service_instances WHERE id = ?", (service_id,)) as cur:
-        row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-    client = _DETAIL_CLIENTS.get(row["type"])
-    if not client:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'{row['type']}' isn't built yet — only {sorted(_DETAIL_CLIENTS)} for now",
-        )
+    row, client = await _get_service_and_client(service_id, db)
 
     fn = {
         "queue": client.get_queue,
         "wanted": client.get_wanted_missing,
-        "calendar": client.get_calendar,
         "series": client.get_series,
         "history": client.get_history,
     }[view]
@@ -244,5 +250,225 @@ async def service_detail(
     api_key = decrypt_str(row["api_key_enc"])
     try:
         return await fn(row["base_url"], api_key)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get("/{service_id}/calendar")
+async def service_calendar(
+    service_id: int, start: str, end: str, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The Calendar tab's month grid — one page (month) at a time via
+    explicit start/end (ISO dates), not a fixed relative window."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await client.get_calendar(row["base_url"], api_key, start, end)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+class SeriesMonitorUpdate(BaseModel):
+    monitored: bool
+
+
+@router.patch("/{service_id}/series/{series_id}/monitored")
+async def update_series_monitored(
+    service_id: int, series_id: int, body: SeriesMonitorUpdate, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The Series tab's Monitored toggle — the first write path to a
+    monitored service (everything else in this router only reads it).
+    Admin-only and audited like the other mutating routes here."""
+    row, client = await _get_service_and_client(service_id, db)
+
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.set_series_monitored(row["base_url"], api_key, series_id, body.monitored)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    await audit.record(db, user=admin, action="series.monitor", target_type="service_instance",
+                        target_id=service_id, detail={"series_id": series_id, "monitored": body.monitored})
+    return {"ok": True, "monitored": body.monitored}
+
+
+class EpisodeMonitorUpdate(BaseModel):
+    monitored: bool
+
+
+@router.patch("/{service_id}/episodes/{episode_id}/monitored")
+async def update_episode_monitored(
+    service_id: int, episode_id: int, body: EpisodeMonitorUpdate, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The Missing tab's Monitored toggle — same shape as the series one,
+    but at episode granularity (Sonarr's wanted/missing rows are episodes)."""
+    row, client = await _get_service_and_client(service_id, db)
+
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.set_episode_monitored(row["base_url"], api_key, episode_id, body.monitored)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    await audit.record(db, user=admin, action="episode.monitor", target_type="service_instance",
+                        target_id=service_id, detail={"episode_id": episode_id, "monitored": body.monitored})
+    return {"ok": True, "monitored": body.monitored}
+
+
+@router.get("/{service_id}/series/{series_id}")
+async def series_detail(
+    service_id: int, series_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The Series tab's drill-down — one series with its season breakdown."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await client.get_series_detail(row["base_url"], api_key, series_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+class SeasonMonitorUpdate(BaseModel):
+    monitored: bool
+
+
+@router.patch("/{service_id}/series/{series_id}/seasons/{season_number}/monitored")
+async def update_season_monitored(
+    service_id: int, series_id: int, season_number: int, body: SeasonMonitorUpdate,
+    admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The series drill-down page's per-season Monitored toggle."""
+    row, client = await _get_service_and_client(service_id, db)
+
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.set_season_monitored(row["base_url"], api_key, series_id, season_number, body.monitored)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    await audit.record(db, user=admin, action="season.monitor", target_type="service_instance",
+                        target_id=service_id,
+                        detail={"series_id": series_id, "season_number": season_number, "monitored": body.monitored})
+    return {"ok": True, "monitored": body.monitored}
+
+
+@router.get("/{service_id}/series/{series_id}/seasons/{season_number}/episodes")
+async def season_episodes(
+    service_id: int, series_id: int, season_number: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Episode rows for one season — fetched when its row is expanded."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await client.get_season_episodes(row["base_url"], api_key, series_id, season_number)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get("/{service_id}/series/{series_id}/seasons/{season_number}/history")
+async def season_history(
+    service_id: int, series_id: int, season_number: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Season History modal's data."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await client.get_season_history(row["base_url"], api_key, series_id, season_number)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/{service_id}/series/{series_id}/seasons/{season_number}/search")
+async def trigger_season_search(
+    service_id: int, series_id: int, season_number: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The expanded season row's Search button."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.search_season(row["base_url"], api_key, series_id, season_number)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="season.search", target_type="service_instance",
+                        target_id=service_id, detail={"series_id": series_id, "season_number": season_number})
+    return {"ok": True}
+
+
+@router.post("/{service_id}/episodes/{episode_id}/search")
+async def trigger_episode_search(
+    service_id: int, episode_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """An episode row's search icon — shown in place of the trash can when
+    the episode has no file yet."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.search_episode(row["base_url"], api_key, episode_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="episode.search", target_type="service_instance",
+                        target_id=service_id, detail={"episode_id": episode_id})
+    return {"ok": True}
+
+
+@router.delete("/{service_id}/episodefiles/{episode_file_id}")
+async def delete_episode_file_route(
+    service_id: int, episode_file_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """An episode row's trash-can icon — shown when the episode has a file.
+    Deletes the file from disk via Sonarr; the episode itself stays (and
+    reverts to showing the search icon)."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.delete_episode_file(row["base_url"], api_key, episode_file_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="episode.delete_file", target_type="service_instance",
+                        target_id=service_id, detail={"episode_file_id": episode_file_id})
+    return {"ok": True}
+
+
+@router.delete("/{service_id}/series/{series_id}")
+async def delete_series_route(
+    service_id: int, series_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db), delete_files: bool = False,
+):
+    """The series overview page's trash-can button. delete_files defaults
+    to False — confirmed destructive by the frontend's typed-confirmation
+    modal either way, but files on disk are only touched if explicitly asked."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await client.delete_series(row["base_url"], api_key, series_id, delete_files)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="series.delete", target_type="service_instance",
+                        target_id=service_id, detail={"series_id": series_id, "delete_files": delete_files})
+    return {"ok": True}
+
+
+@router.get("/{service_id}/series/{series_id}/history")
+async def series_history(
+    service_id: int, series_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The series header's History button — every season's history in one list."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await client.get_series_history(row["base_url"], api_key, series_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get("/{service_id}/series/{series_id}/calendar")
+async def series_calendar(
+    service_id: int, series_id: int, start: str, end: str, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The series header's Calendar button — missing-episode calendar
+    events for just this series, one month grid page at a time."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await client.get_series_calendar(row["base_url"], api_key, series_id, start, end)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

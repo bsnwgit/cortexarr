@@ -9,8 +9,7 @@ import CortexarrLogo from './icons/CortexarrLogo'
 const TABS = [
   { to: '/', label: 'Dashboard' },
   { to: '/services', label: 'Services' },
-  { to: '/settings', label: 'Settings' },
-  { to: '/audit', label: 'Audit Log' },
+  { to: '/logs', label: 'Logs' },
 ]
 
 export default function Layout() {

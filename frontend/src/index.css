@@ -13,6 +13,13 @@ body {
   .btn-secondary {
     @apply rounded-lg border border-slate-700 text-slate-200 hover:bg-slate-900 text-sm px-3 py-1.5 disabled:opacity-50;
   }
+  /* A short run of stats (year range, status, counts, size, ...) shown
+     side by side — each gets its own visible boundary instead of relying
+     on flex `gap` alone, which is invisible the moment the text is
+     selected/copied rather than looked at. */
+  .metadata-pill {
+    @apply inline-block bg-slate-950/60 border border-slate-700 rounded-lg px-2 py-0.5 text-slate-300;
+  }
 
   /* Native <select> disabled options otherwise render in the browser's own
      pale gray on Firefox/Chrome, invisible against a dark dropdown — light
