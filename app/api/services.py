@@ -8,14 +8,14 @@ import json
 from typing import Optional
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from app import audit
 from app.crypto import decrypt_str, encrypt_str
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
-from app.services import arr_http, radarr_client, seerr_client, sonarr_client
+from app.services import arr_http, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
@@ -28,7 +28,10 @@ _MASK = "••••••••"
 # entry here. Each client implements the views its media model has — a
 # view (or route) the client has no function for answers 404/400 rather
 # than a 500, so e.g. Radarr has no "series" and Sonarr has no "movies".
-_DETAIL_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client}
+_DETAIL_CLIENTS = {
+    "sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client, "nzbget": nzbget_client,
+    "sabnzbd": sabnzbd_client,
+}
 _IMPLEMENTED_TYPES = set(_DETAIL_CLIENTS)
 
 # view name -> client function name. Calendar has its own route (start/end).
@@ -40,6 +43,7 @@ _DETAIL_VIEWS = {
     "history": "get_history",
     "requests": "get_requests",
     "issues": "get_issues",
+    "overview": "get_overview",
 }
 
 
@@ -640,4 +644,58 @@ async def request_action(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action=f"request.{action}", target_type="service_instance",
                         target_id=service_id, detail={"request_id": request_id})
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Downloads (NZBGet) — per-item queue/history actions and global pause.
+# ---------------------------------------------------------------------------
+
+_DOWNLOAD_ACTIONS = {
+    "pause": "pause_item", "resume": "resume_item", "top": "move_item_top",
+    "delete": "delete_item", "retry": "retry_item",
+}
+_DOWNLOAD_CONTROL = {"pause": "pause_all", "resume": "resume_all"}
+
+
+@router.post("/{service_id}/downloads/{item_id}/{action}")
+async def download_action(
+    service_id: int, action: str, admin: AdminUser,
+    # NZBGet ids are ints, SABnzbd's look like SABnzbd_nzo_xxxx.
+    item_id: str = Path(max_length=100, pattern=r"^[A-Za-z0-9_\-]+$"), db: aiosqlite.Connection = Depends(get_db),
+):
+    """Queue item Pause/Resume/Move to top/Delete (confirmed in the UI),
+    and history item Retry (re-download)."""
+    fn_name = _DOWNLOAD_ACTIONS.get(action)
+    if not fn_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown action: {action}")
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, fn_name)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, item_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action=f"download.{action}", target_type="service_instance",
+                        target_id=service_id, detail={"item_id": item_id})
+    return {"ok": True}
+
+
+@router.post("/{service_id}/download-control/{action}")
+async def download_control(
+    service_id: int, action: str, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The header strip's global Pause/Resume of all downloading."""
+    fn_name = _DOWNLOAD_CONTROL.get(action)
+    if not fn_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown action: {action}")
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, fn_name)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action=f"downloads.{action}_all", target_type="service_instance",
+                        target_id=service_id, detail={})
     return {"ok": True}

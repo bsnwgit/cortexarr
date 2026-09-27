@@ -33,7 +33,7 @@ export default function Dashboard() {
         <p className="text-slate-500 text-sm">Loading…</p>
       ) : services.length === 0 ? (
         <p className="text-slate-500 text-sm">
-          No services configured yet — add one under <Link to="/services" className="underline hover:text-slate-300">Services</Link>.
+          No services configured yet — <Link to="/services?add=1" className="underline hover:text-slate-300">add one</Link>.
         </p>
       ) : (
         <div className="flex flex-col gap-3">
