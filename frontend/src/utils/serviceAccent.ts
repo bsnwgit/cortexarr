@@ -32,6 +32,13 @@ const ACCENTS: Record<string, ServiceAccent> = {
     border: 'border-yellow-500/40',
     hoverBorder: 'hover:border-yellow-500/40',
   },
+  // Seerr's indigo (#4F65F5, the deep end of its purple-to-indigo mark).
+  seerr: {
+    text: 'text-indigo-300',
+    bg: 'bg-indigo-500/15',
+    border: 'border-indigo-500/40',
+    hoverBorder: 'hover:border-indigo-500/40',
+  },
 }
 
 export function getServiceAccent(type: string): ServiceAccent {

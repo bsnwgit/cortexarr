@@ -22,6 +22,7 @@ interface HistoryItem {
   episode?: string
   movie?: string
   year?: number | null
+  title?: string
   source_title: string | null
   quality: string
   date: string | null
@@ -36,7 +37,7 @@ interface ActivityRow extends HistoryItem {
 
 // Services already known to have a real client behind `/detail/history` —
 // keep in sync with app/api/services.py's _DETAIL_CLIENTS as new types land.
-const HISTORY_CAPABLE_TYPES = new Set(['sonarr', 'radarr'])
+const HISTORY_CAPABLE_TYPES = new Set(['sonarr', 'radarr', 'seerr'])
 
 // The category filter's pipelines, by service type — including the planned
 // ones, so each option appears on its own once a service of that type is
@@ -50,6 +51,7 @@ const CATEGORIES: { key: string; label: string; types: string[] }[] = [
 
 // What the row is about, in one line, whatever the service type.
 function rowTitle(r: HistoryItem): string {
+  if (r.title) return r.title
   if (r.movie !== undefined) return r.year ? `${r.movie} (${r.year})` : r.movie
   return `${r.series ?? ''} — ${r.episode ?? ''}`
 }

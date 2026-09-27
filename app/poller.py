@@ -22,14 +22,14 @@ import aiosqlite
 
 from app.crypto import decrypt_str
 from app.database import DB_PATH
-from app.services import radarr_client, sonarr_client
+from app.services import radarr_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError
 
 log = logging.getLogger("cortexarr.poller")
 
 # Types with a real check_health behind them — the poller only picks up
 # instances of these.
-_HEALTH_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client}
+_HEALTH_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client}
 
 _TICK_SECONDS = 5
 _PRUNE_EVERY_SECONDS = 3600

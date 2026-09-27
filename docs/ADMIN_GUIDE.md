@@ -2,10 +2,14 @@
 
 ## Adding a monitored service
 
-Under **Services → + Add service**, pick a type (Sonarr and Radarr are
-implemented so far), give it a name, base URL, and API key, then **Test
-connection** before saving — this checks the URL and key actually work. The
-API key is under *Settings → General* in Sonarr/Radarr.
+Under **Services → + Add service**, pick a type (Sonarr, Radarr, and Seerr
+are implemented so far), give it a name, base URL, and API key, then **Test
+connection** before saving — this checks the URL and key actually work, and
+that the URL really is the type you picked. The API key is under
+*Settings → General* in Sonarr, Radarr, and Seerr.
+
+Seerr has no health endpoint of its own; its status shows **Warning** when
+Seerr reports an available update or a pending restart.
 
 Each service instance has its own poll interval and retry/backoff settings,
 so a fast-changing instance can be checked more often than a slow one

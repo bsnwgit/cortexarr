@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import ServiceCard, { type DashboardService } from '../components/ServiceCard'
 
+const FULL_WIDTH_TYPES = new Set(['seerr'])
+
 // One card per monitored service — Sonarr's shows fan art from whatever
 // it's currently downloading plus state pills (active/queue/missing), not
 // a log and not just a name. The full activity log lives under
@@ -34,10 +36,21 @@ export default function Dashboard() {
           No services configured yet — add one under <Link to="/services" className="underline hover:text-slate-300">Services</Link>.
         </p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {services.map((s) => (
-            <ServiceCard key={s.id} service={s} />
-          ))}
+        <div className="flex flex-col gap-3">
+          {/* Requests are where the pipeline starts, so Seerr runs full
+              width above the per-service cards. */}
+          {services
+            .filter((s) => FULL_WIDTH_TYPES.has(s.type))
+            .map((s) => (
+              <ServiceCard key={s.id} service={s} />
+            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {services
+              .filter((s) => !FULL_WIDTH_TYPES.has(s.type))
+              .map((s) => (
+                <ServiceCard key={s.id} service={s} />
+              ))}
+          </div>
         </div>
       )}
     </div>

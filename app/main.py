@@ -1,9 +1,9 @@
 """
 Cortexarr — FastAPI application entry point.
 
-Sonarr + Radarr slice: app-level health (scope #1), global + per-user
-notifications (#3, #13), audit log (#21), public status API. Item-level
-flow tracking, MCP parity, AI provider integration, Seerr/download
+Sonarr + Radarr + Seerr slice: app-level health (scope #1), global +
+per-user notifications (#3, #13), audit log (#21), public status API.
+Item-level flow tracking, MCP parity, AI provider integration, download
 clients, and self-update all land in later passes — see the project memory
 for the full scope list.
 """
