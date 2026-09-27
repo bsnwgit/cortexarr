@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api/client'
-import CalendarGrid, { type CalendarEvent } from './CalendarGrid'
+import CalendarGrid, { type GridEvent } from './CalendarGrid'
+import { getServiceAccent } from '../utils/serviceAccent'
+
+interface SeriesCalendarRow {
+  id: number
+  series_id: number | null
+  season_number: number | null
+  episode: string
+  air_date: string | null
+  has_file: boolean
+}
 
 function monthRange(month: Date): { start: string; end: string } {
   const start = new Date(month.getFullYear(), month.getMonth(), 1)
@@ -24,7 +34,7 @@ export default function CalendarModal({
     const base = initialMonth ?? new Date()
     return new Date(base.getFullYear(), base.getMonth(), 1)
   })
-  const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [events, setEvents] = useState<GridEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -35,10 +45,24 @@ export default function CalendarModal({
       setError('')
       try {
         const { start, end } = monthRange(month)
-        const data = await api.get<CalendarEvent[]>(
+        const data = await api.get<SeriesCalendarRow[]>(
           `/services/${serviceId}/series/${seriesId}/calendar?start=${start}&end=${end}`,
         )
-        if (!cancelled) setEvents(data)
+        if (!cancelled) {
+          setEvents(
+            data.map((r) => ({
+              key: r.id,
+              date: r.air_date,
+              label: r.episode,
+              tooltip: r.episode,
+              hasFile: r.has_file,
+              href:
+                r.series_id != null
+                  ? `/services/${serviceId}/series/${r.series_id}${r.season_number != null ? `?season=${r.season_number}` : ''}`
+                  : null,
+            })),
+          )
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load')
       } finally {
@@ -84,7 +108,7 @@ export default function CalendarModal({
           ) : loading ? (
             <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
           ) : (
-            <CalendarGrid month={month} events={events} serviceId={serviceId} onNavigate={onClose} />
+            <CalendarGrid month={month} events={events} accent={getServiceAccent('sonarr')} onNavigate={onClose} />
           )}
         </div>
       </div>

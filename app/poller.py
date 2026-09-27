@@ -22,9 +22,14 @@ import aiosqlite
 
 from app.crypto import decrypt_str
 from app.database import DB_PATH
-from app.services import sonarr_client
+from app.services import radarr_client, sonarr_client
+from app.services.errors import ConnectivityError
 
 log = logging.getLogger("cortexarr.poller")
+
+# Types with a real check_health behind them — the poller only picks up
+# instances of these.
+_HEALTH_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client}
 
 _TICK_SECONDS = 5
 _PRUNE_EVERY_SECONDS = 3600
@@ -47,13 +52,14 @@ async def _check_one(db: aiosqlite.Connection, service: aiosqlite.Row) -> None:
     retries = max(service["retry_count"], 0)
     backoff = max(service["retry_backoff_seconds"], 1)
 
+    client = _HEALTH_CLIENTS[service["type"]]
     result = None
     last_error = ""
     for attempt in range(retries + 1):
         try:
-            result = await sonarr_client.check_health(service["base_url"], api_key)
+            result = await client.check_health(service["base_url"], api_key)
             break
-        except sonarr_client.ConnectivityError as exc:
+        except ConnectivityError as exc:
             last_error = str(exc)
             if attempt < retries:
                 await asyncio.sleep(backoff * (attempt + 1))
@@ -90,13 +96,15 @@ async def run_forever() -> None:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
+                types = sorted(_HEALTH_CLIENTS)
                 async with db.execute(
                     "SELECT si.*, "
                     "(SELECT checked_at FROM health_snapshots hs WHERE hs.service_instance_id = si.id "
                     " ORDER BY checked_at DESC LIMIT 1) AS last_checked_at "
                     "FROM service_instances si "
                     "WHERE si.enabled = 1 AND si.maintenance_mode = 0 AND si.ingestion_mode = 'poll' "
-                    "AND si.type = 'sonarr'"
+                    f"AND si.type IN ({', '.join('?' for _ in types)})",
+                    types,
                 ) as cur:
                     services = await cur.fetchall()
 

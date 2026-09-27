@@ -1,7 +1,7 @@
 interface HistoryRow {
   id: number
   event_type: string
-  episode: string
+  episode?: string
   source_title: string | null
   quality: string
   date: string | null
@@ -13,13 +13,21 @@ function fmtDate(v: string | null) {
   return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
 }
 
+// The third column defaults to the episode (series/season history); a
+// movie's history has no episodes, so it shows the release name instead.
 export default function HistoryModal({
   title, rows, loading, onClose,
+  columnLabel = 'Episode',
+  columnValue = (r) => r.episode ?? '',
+  emptyMessage = 'No history for this season.',
 }: {
   title: string
   rows: HistoryRow[]
   loading: boolean
   onClose: () => void
+  columnLabel?: string
+  columnValue?: (row: HistoryRow) => string
+  emptyMessage?: string
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
@@ -34,14 +42,14 @@ export default function HistoryModal({
           {loading ? (
             <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
           ) : rows.length === 0 ? (
-            <p className="text-slate-500 text-sm py-6 text-center">No history for this season.</p>
+            <p className="text-slate-500 text-sm py-6 text-center">{emptyMessage}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-slate-400 border-b border-slate-800">
                   <th className="font-medium py-2 pr-3">Date</th>
                   <th className="font-medium py-2 pr-3">Event</th>
-                  <th className="font-medium py-2 pr-3">Episode</th>
+                  <th className="font-medium py-2 pr-3">{columnLabel}</th>
                   <th className="font-medium py-2 pr-3">Quality</th>
                 </tr>
               </thead>
@@ -50,7 +58,7 @@ export default function HistoryModal({
                   <tr key={r.id} className="border-b border-slate-900 last:border-0">
                     <td className="py-2 pr-3 text-slate-100 whitespace-nowrap">{fmtDate(r.date)}</td>
                     <td className="py-2 pr-3 text-slate-100 capitalize">{r.event_type}</td>
-                    <td className="py-2 pr-3 text-slate-100">{r.episode}</td>
+                    <td className="py-2 pr-3 text-slate-100">{columnValue(r)}</td>
                     <td className="py-2 pr-3 text-slate-100">{r.quality || '—'}</td>
                   </tr>
                 ))}

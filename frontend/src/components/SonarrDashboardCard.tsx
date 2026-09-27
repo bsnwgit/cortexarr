@@ -141,7 +141,7 @@ export default function SonarrDashboardCard({ service }: { service: DashboardSer
             <ServiceIcon type={service.type} className="w-5 h-5 rounded-sm shrink-0" />
             {service.name}
           </span>
-          <StatusPill service={service} />
+          <StatusPill service={service} accent={accent} />
         </div>
       </div>
 

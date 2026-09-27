@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import type { ServiceAccent } from '../utils/serviceAccent'
 
 export interface StatusInfo {
   maintenance_mode: boolean
@@ -15,7 +16,9 @@ const STATUS_STYLES: Record<string, string> = {
 // Shared by the Dashboard's (former) service cards and the Services page's
 // list rows — a service's status should read identically wherever it's
 // shown, not just on the page originally built to show it.
-export default function StatusPill({ service }: { service: StatusInfo }) {
+// `accent` colors the Healthy state in the service's own color; warning,
+// error, and unreachable stay amber/red regardless.
+export default function StatusPill({ service, accent }: { service: StatusInfo; accent?: ServiceAccent }) {
   if (service.maintenance_mode) {
     return <span className="text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-400">Maintenance</span>
   }
@@ -32,6 +35,13 @@ export default function StatusPill({ service }: { service: StatusInfo }) {
           ? 'Warning'
           : 'Error'
   return (
-    <span className={clsx('text-xs px-2 py-1 rounded-lg border', STATUS_STYLES[service.status])}>{label}</span>
+    <span
+      className={clsx(
+        'text-xs px-2 py-1 rounded-lg border',
+        service.status === 'ok' && accent ? clsx(accent.bg, accent.text, accent.border) : STATUS_STYLES[service.status],
+      )}
+    >
+      {label}
+    </span>
   )
 }

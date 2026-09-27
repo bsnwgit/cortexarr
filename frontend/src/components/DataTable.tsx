@@ -120,6 +120,7 @@ export default function DataTable<T extends { id?: number | string }>({
   defaultPageSize = 25,
   initialQuery = '',
   initialFilterScope = [],
+  toolbar,
 }: {
   columns: Column<T>[]
   rows: T[]
@@ -130,6 +131,8 @@ export default function DataTable<T extends { id?: number | string }>({
   // dashboard already scoped to one series, rather than the user retyping it.
   initialQuery?: string
   initialFilterScope?: string[]
+  // Extra view-specific controls shown beside the filter box.
+  toolbar?: ReactNode
 }) {
   const [query, setQuery] = useState(initialQuery)
   const [filterScope, setFilterScope] = useState<Set<string>>(new Set(initialFilterScope))
@@ -187,6 +190,7 @@ export default function DataTable<T extends { id?: number | string }>({
               setPage(1)
             }}
           />
+          {toolbar}
         </div>
         <div className="flex items-center gap-3 flex-wrap sm:justify-end">
           <PageSizeSelect

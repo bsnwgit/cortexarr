@@ -12,11 +12,13 @@ progress from Seerr through to import, and flags anything that stalls
 along the way — instead of tabbing between four separate admin UIs to find
 out something's broken.
 
-Currently implemented: Sonarr health monitoring, connection testing,
-per-service polling with retry/backoff, role-based auth (admin/analyst/
-viewer), audit logging, and notifications across email, webhook (Slack/
-Discord), push (ntfy), and SMS (Twilio). Radarr, Seerr, download-client
-support, item-level flow tracking, and MCP/AI integration are in progress.
+Currently implemented: Sonarr and Radarr — health monitoring, library,
+queue, missing, and calendar views, with monitor/search/delete actions —
+plus connection testing, per-service polling with retry/backoff, role-based
+auth (admin/analyst/viewer), audit logging, and notifications across email,
+webhook (Slack/Discord), push (ntfy), and SMS (Twilio). Seerr,
+download-client support, item-level flow tracking, and MCP/AI integration
+are in progress.
 
 ## Requirements
 

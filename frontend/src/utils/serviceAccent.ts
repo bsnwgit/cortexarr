@@ -25,6 +25,13 @@ const ACCENTS: Record<string, ServiceAccent> = {
     border: 'border-teal-600/40',
     hoverBorder: 'hover:border-teal-600/40',
   },
+  // Radarr's gold (#FFC230, the wedge in its own mark).
+  radarr: {
+    text: 'text-yellow-300',
+    bg: 'bg-yellow-500/15',
+    border: 'border-yellow-500/40',
+    hoverBorder: 'hover:border-yellow-500/40',
+  },
 }
 
 export function getServiceAccent(type: string): ServiceAccent {

@@ -6,6 +6,8 @@ import ServiceIcon from '../components/ServiceIcon'
 import SeriesLibraryList, { type SeriesLibraryItem } from '../components/SeriesLibraryList'
 import DownloadingPanel from '../components/DownloadingPanel'
 import MissingGrouped from '../components/MissingGrouped'
+import MissingMovies from '../components/MissingMovies'
+import MovieLibraryList from '../components/MovieLibraryList'
 import CalendarPage from '../components/CalendarPage'
 import { getServiceAccent } from '../utils/serviceAccent'
 
@@ -16,25 +18,31 @@ interface Service {
   base_url: string
 }
 
-const TABS = [
-  { key: 'series', label: 'Series' },
-  { key: 'downloading', label: 'Downloading' },
-  { key: 'missing', label: 'Missing' },
-  { key: 'calendar', label: 'Calendar' },
-] as const
-
-type TabKey = (typeof TABS)[number]['key']
+// Tabs per service type. The first tab is the library, and the default
+// landing tab (clicking a service from the dashboard lands on its library);
+// an explicit ?tab= wins when it's a tab this type has.
+const TABS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
+  sonarr: [
+    { key: 'series', label: 'Series' },
+    { key: 'downloading', label: 'Downloading' },
+    { key: 'missing', label: 'Missing' },
+    { key: 'calendar', label: 'Calendar' },
+  ],
+  radarr: [
+    { key: 'movies', label: 'Movies' },
+    { key: 'downloading', label: 'Downloading' },
+    { key: 'missing', label: 'Missing' },
+    { key: 'calendar', label: 'Calendar' },
+  ],
+}
 
 export default function ServiceDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const [service, setService] = useState<Service | null>(null)
-  const [tab, setTab] = useState<TabKey>(() => {
-    // Default landing tab is Series (clicking a service from the dashboard
-    // should land on its library) — an explicit ?tab= always wins.
-    const requested = searchParams.get('tab')
-    return TABS.some((t) => t.key === requested) ? (requested as TabKey) : 'series'
-  })
+  const [requestedTab, setTab] = useState<string | null>(() => searchParams.get('tab'))
+  const tabs = TABS_BY_TYPE[service?.type ?? ''] ?? []
+  const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : tabs[0]?.key
   const accent = getServiceAccent(service?.type ?? '')
 
   const [series, setSeries] = useState<SeriesLibraryItem[]>([])
@@ -95,7 +103,7 @@ export default function ServiceDetail() {
       </div>
 
       <div className="flex gap-1 mb-4 overflow-x-auto">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -111,7 +119,7 @@ export default function ServiceDetail() {
         ))}
       </div>
 
-      {tab === 'series' ? (
+      {!service ? null : tab === 'series' ? (
         <div className="bg-slate-925 border border-slate-800 rounded-xl p-2 sm:p-4">
           {seriesError ? (
             <p className="text-red-300 text-sm py-6 text-center">{seriesError}</p>
@@ -121,13 +129,21 @@ export default function ServiceDetail() {
             <SeriesLibraryList serviceId={id ?? ''} accent={accent} series={series} />
           )}
         </div>
+      ) : tab === 'movies' ? (
+        <div className="bg-slate-925 border border-slate-800 rounded-xl p-2 sm:p-4">
+          <MovieLibraryList serviceId={id ?? ''} accent={accent} />
+        </div>
       ) : tab === 'downloading' ? (
-        <DownloadingPanel serviceId={id ?? ''} accent={accent} />
+        <DownloadingPanel serviceId={id ?? ''} serviceType={service.type} accent={accent} />
       ) : tab === 'missing' ? (
-        <MissingGrouped serviceId={id ?? ''} accent={accent} />
-      ) : (
-        <CalendarPage serviceId={id ?? ''} />
-      )}
+        service.type === 'radarr' ? (
+          <MissingMovies serviceId={id ?? ''} accent={accent} />
+        ) : (
+          <MissingGrouped serviceId={id ?? ''} accent={accent} />
+        )
+      ) : tab === 'calendar' ? (
+        <CalendarPage serviceId={id ?? ''} serviceType={service.type} />
+      ) : null}
     </div>
   )
 }

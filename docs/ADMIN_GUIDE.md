@@ -2,9 +2,10 @@
 
 ## Adding a monitored service
 
-Under **Services → + Add service**, pick a type (only Sonarr is implemented
-so far), give it a name, base URL, and API key, then **Test connection**
-before saving — this checks the URL and key actually work.
+Under **Services → + Add service**, pick a type (Sonarr and Radarr are
+implemented so far), give it a name, base URL, and API key, then **Test
+connection** before saving — this checks the URL and key actually work. The
+API key is under *Settings → General* in Sonarr/Radarr.
 
 Each service instance has its own poll interval and retry/backoff settings,
 so a fast-changing instance can be checked more often than a slow one
