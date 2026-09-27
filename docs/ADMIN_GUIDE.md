@@ -26,7 +26,7 @@ Each service instance has its own poll interval and retry/backoff settings,
 so a fast-changing instance can be checked more often than a slow one
 without affecting the others.
 
-The **Services** page lists every service with **Test** (re-run the
+The **Services** page (user menu → *Services* → **Manage services**) lists every service with **Test** (re-run the
 connection check), **Maintenance mode**, and **Delete**.
 
 A read-only JSON summary of every service's health is served, without

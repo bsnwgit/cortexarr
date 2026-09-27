@@ -2,8 +2,9 @@
 
 ## Your account
 
-Click your username in the top-right corner for **Settings**, **Change
-password**, and **Log out**. Admins also see **Add service** there (see the
+Click your username in the top-right corner for **Services** (the list of
+monitored services), **Settings**, **Change password**, and **Log out**.
+Admins also see **Add service** under Services (see the
 [Admin Guide](ADMIN_GUIDE.md)).
 
 ## Dashboard
