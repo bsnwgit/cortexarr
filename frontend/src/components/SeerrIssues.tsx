@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client'
 import DataTable, { type Column } from './DataTable'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtWhen } from '../utils/seerrFormat'
+import PageSpinner from './PageSpinner'
 
 interface SeerrIssue {
   id: string
@@ -161,7 +162,7 @@ export default function SeerrIssues({ serviceId, accent }: { serviceId: string; 
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : (
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} emptyMessage="No failed requests or open issues." />
       )}

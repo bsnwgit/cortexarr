@@ -6,8 +6,20 @@ import { useAuth } from '../auth/AuthContext'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import ServiceIcon from '../components/ServiceIcon'
 import { fmtDateTime } from '../utils/time'
+import { resultText } from '../utils/notifyResult'
 
-type Event = 'unreachable' | 'error' | 'warning' | 'stuck' | 'download_failed' | 'request_issue'
+type Event =
+  | 'unreachable'
+  | 'error'
+  | 'warning'
+  | 'stuck'
+  | 'download_failed'
+  | 'request_issue'
+  | 'stalled_approval'
+  | 'stalled_sending'
+  | 'stalled_searching'
+  | 'stalled_downloading'
+  | 'stalled_importing'
 type Channel = 'email' | 'webhook' | 'ntfy' | 'sms'
 
 interface Rule {
@@ -62,7 +74,7 @@ interface LogRow {
   rule_name: string
   service_name: string
   event: Event
-  kind: 'alert' | 'resolved' | 'test'
+  kind: 'alert' | 'resolved' | 'test' | 'digest'
   subject: string
   body: string
   results: Record<string, { status: string; detail: string }>
@@ -83,6 +95,11 @@ const EVENTS: { key: Event; label: string; hint: string; types: string[] | null;
   { key: 'stuck', label: 'Queue item stuck', hint: 'A Sonarr/Radarr download or import in warning or failed.', types: ['sonarr', 'radarr'], state: true },
   { key: 'download_failed', label: 'Download failed', hint: 'A failed download in NZBGet/SABnzbd.', types: ['nzbget', 'sabnzbd'], state: false },
   { key: 'request_issue', label: 'Request failed or issue reported', hint: 'A failed request or reported issue in Seerr.', types: ['seerr'], state: false },
+  { key: 'stalled_approval', label: 'Request waiting for approval', hint: 'A Seerr request nobody has approved or declined yet.', types: ['seerr'], state: true },
+  { key: 'stalled_sending', label: 'Request not in Sonarr/Radarr', hint: "Approved in Seerr but it hasn't reached Sonarr/Radarr.", types: ['seerr'], state: true },
+  { key: 'stalled_searching', label: 'Request still searching', hint: 'In Sonarr/Radarr with nothing found to download yet.', types: ['seerr'], state: true },
+  { key: 'stalled_downloading', label: 'Request still downloading', hint: 'Downloading for longer than this.', types: ['seerr'], state: true },
+  { key: 'stalled_importing', label: 'Request stuck importing', hint: "Downloaded but not imported.", types: ['seerr'], state: true },
 ]
 const EVENT_LABEL = Object.fromEntries(EVENTS.map((e) => [e.key, e.label])) as Record<Event, string>
 const CHANNELS: { key: Channel; label: string }[] = [
@@ -221,6 +238,9 @@ export default function Alerts() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkSummary, setBulkSummary] = useState<{ ok: boolean; text: string } | null>(null)
   const [bulkConfirm, setBulkConfirm] = useState<Problem['actions'][number] | null>(null)
+  // Set by clicking a "fix the same way" pill: shows only that group, until
+  // toggled off or the group empties out (everything in it got fixed).
+  const [groupFilter, setGroupFilter] = useState<string | null>(null)
 
   async function load() {
     const [r, p, l, s] = await Promise.all([
@@ -236,6 +256,7 @@ export default function Alerts() {
     setProblems(loaded)
     const still = new Set(loaded.map(rowKey))
     setSelected((sel) => new Set([...sel].filter((k) => still.has(k))))
+    setGroupFilter((gf) => (gf && !loaded.some((x) => fixSet(x) === gf) ? null : gf))
     setLog(l)
     setServices(s)
   }
@@ -286,7 +307,7 @@ export default function Alerts() {
         {},
       )
       const text = Object.entries(res.results)
-        .map(([ch, r]) => `${ch}: ${r.status} — ${r.detail}`)
+        .map(([ch, r]) => `${ch}: ${resultText(r)}`)
         .join(' · ')
       setTestResult((t) => ({ ...t, [rule.id]: text || 'No channels' }))
       await load()
@@ -336,6 +357,7 @@ export default function Alerts() {
     }
   }
 
+  const visibleProblems = groupFilter ? problems.filter((p) => fixSet(p) === groupFilter) : problems
   const selectedProblems = problems.filter((p) => selected.has(rowKey(p)))
   const selectedFixSet = selectedProblems.length ? fixSet(selectedProblems[0]) : null
   const groups = Array.from(
@@ -352,9 +374,16 @@ export default function Alerts() {
     setBulkSummary(null)
   }
 
-  function selectGroup(list: Problem[]) {
-    setSelected(new Set(list.map(rowKey)))
+  function selectGroup(set: string, list: Problem[]) {
     setBulkSummary(null)
+    if (groupFilter === set) {
+      // Same pill again: back to showing everything.
+      setGroupFilter(null)
+      setSelected(new Set())
+      return
+    }
+    setGroupFilter(set)
+    setSelected(new Set(list.map(rowKey)))
   }
 
   function summarise(results: { service_id: number; key: string; status: string; detail: string }[]) {
@@ -416,15 +445,36 @@ export default function Alerts() {
     <div>
       <h2 className="text-lg font-semibold text-slate-100 mb-4">Alerts</h2>
 
-      <Section title={`Current problems (${problems.length})`}>
+      <Section
+        title={
+          groupFilter
+            ? `Current problems (${visibleProblems.length} of ${problems.length} shown)`
+            : `Current problems (${problems.length})`
+        }
+      >
         {canSnooze && problems.length > 1 && (
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span>Select all that fix the same way:</span>
             {groups.map(([set, list]) => (
-              <button key={set} onClick={() => selectGroup(list)} className="btn-secondary text-xs">
+              <button
+                key={set}
+                onClick={() => selectGroup(set, list)}
+                className={clsx('text-xs', groupFilter === set ? 'btn-secondary border-violet-600/60 text-violet-300' : 'btn-secondary')}
+              >
                 {list[0].actions.map((a) => a.label).join(' · ') || 'No fix — snooze only'} ({list.length})
               </button>
             ))}
+            {groupFilter && (
+              <button
+                onClick={() => {
+                  setGroupFilter(null)
+                  setSelected(new Set())
+                }}
+                className="underline hover:text-slate-200"
+              >
+                Show all
+              </button>
+            )}
           </div>
         )}
         {selectedProblems.length > 0 && (
@@ -449,7 +499,7 @@ export default function Alerts() {
                 ))}
             <SnoozeControl onSnooze={snoozeBulk} />
             <button onClick={() => setSelected(new Set())} className="btn-secondary">
-              Clear
+              Deselect
             </button>
           </div>
         )}
@@ -458,9 +508,11 @@ export default function Alerts() {
         )}
         {problems.length === 0 ? (
           <p className="text-sm text-slate-400">Nothing wrong right now.</p>
+        ) : visibleProblems.length === 0 ? (
+          <p className="text-sm text-slate-400">Nothing left in this group — every one was fixed.</p>
         ) : (
           <div className="bg-slate-925 border border-slate-800 rounded-xl divide-y divide-slate-800">
-            {problems.map((p) => (
+            {visibleProblems.map((p) => (
               <div key={`${p.service_id}-${p.key}`} className="px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                 {canSnooze && (
                   <input
@@ -798,7 +850,13 @@ export default function Alerts() {
                     <span
                       className={clsx(
                         'metadata-pill text-xs shrink-0 self-start sm:self-auto',
-                        l.kind === 'resolved' ? 'text-teal-300' : l.kind === 'test' ? 'text-violet-300' : 'text-red-300',
+                        l.kind === 'resolved'
+                          ? 'text-teal-300'
+                          : l.kind === 'test'
+                            ? 'text-violet-300'
+                            : l.kind === 'digest'
+                              ? 'text-slate-200'
+                              : 'text-red-300',
                       )}
                     >
                       {l.kind}
@@ -817,7 +875,7 @@ export default function Alerts() {
                       </pre>
                       {Object.entries(l.results).map(([ch, r]) => (
                         <p key={ch} className="text-xs text-slate-400">
-                          {ch}: {r.status} — {r.detail}
+                          {ch}: {resultText(r)}
                         </p>
                       ))}
                     </div>
@@ -835,7 +893,9 @@ export default function Alerts() {
           warning={
             bulkConfirm.id === 'redownload'
               ? 'Each download is removed from the queue and the download client, and its release is blocklisted; a search for another release starts for each.'
-              : 'Each download is removed from the queue and the download client.'
+              : bulkConfirm.id === 'clear_request'
+                ? 'Each request is deleted from Seerr outright. If anyone wants it again, they have to ask again.'
+                : 'Each download is removed from the queue and the download client.'
           }
           confirmLabel={`${bulkConfirm.label} (${selectedProblems.length})`}
           busy={bulkBusy}
@@ -854,7 +914,9 @@ export default function Alerts() {
           warning={
             fixing.action.id === 'redownload'
               ? 'The download is removed from the queue and the download client, and the release is blocklisted; a search for another release starts.'
-              : 'The download is removed from the queue and the download client.'
+              : fixing.action.id === 'clear_request'
+                ? 'The request is deleted from Seerr outright. If anyone wants it again, they have to ask again.'
+                : 'The download is removed from the queue and the download client.'
           }
           confirmLabel={fixing.action.label}
           busy={!!fixBusy}

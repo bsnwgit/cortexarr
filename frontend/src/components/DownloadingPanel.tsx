@@ -5,6 +5,7 @@ import { api, ApiError } from '../api/client'
 import DataTable, { type Column } from '../components/DataTable'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtDateTime } from '../utils/time'
+import PageSpinner from './PageSpinner'
 
 interface QueueItem {
   id: number
@@ -188,7 +189,7 @@ export default function DownloadingPanel({
         {error ? (
           <p className="text-red-300 text-sm py-6 text-center">{error}</p>
         ) : loading && rows.length === 0 ? (
-          <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+          <PageSpinner className="py-6" />
         ) : (
           <DataTable
             key={subTab}

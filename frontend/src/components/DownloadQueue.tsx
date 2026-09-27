@@ -6,6 +6,7 @@ import ConfirmDeleteModal from './ConfirmDeleteModal'
 import { TrashIcon } from './icons/UiIcons'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtBytes, fmtDuration, wrapName } from '../utils/downloadFormat'
+import PageSpinner from './PageSpinner'
 
 // What deleting from the queue does, per client — worded for the confirm.
 const DELETE_NOTE: Record<string, string> = {
@@ -174,7 +175,7 @@ export default function DownloadQueue({
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : (
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} emptyMessage="The queue is empty." />
       )}

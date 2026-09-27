@@ -5,6 +5,7 @@ import { api, ApiError } from '../api/client'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtBytes, fmtRuntime, movieAvailability, movieStatusLabel } from '../utils/movieFormat'
 import { PageControls, PageSizeSelect } from './Pagination'
+import PageSpinner from './PageSpinner'
 
 export interface MovieLibraryItem {
   id: number
@@ -103,7 +104,7 @@ export default function MovieLibraryList({ serviceId, accent }: { serviceId: str
   )
 
   if (error) return <p className="text-red-300 text-sm py-6 text-center">{error}</p>
-  if (loading) return <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+  if (loading) return <PageSpinner className="py-6" />
 
   return (
     <div>

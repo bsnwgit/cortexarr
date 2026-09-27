@@ -6,9 +6,10 @@ import MonitoredToggle from '../components/MonitoredToggle'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 import HistoryModal from '../components/HistoryModal'
 import CalendarModal from '../components/CalendarModal'
-import { CalendarIcon, ChevronIcon, HistoryIcon, RefreshIcon, SearchIcon, TrashIcon } from '../components/icons/UiIcons'
+import { CalendarIcon, ChevronIcon, HistoryIcon, RefreshIcon, SearchIcon, SpinnerIcon, TrashIcon } from '../components/icons/UiIcons'
 import { getServiceAccent } from '../utils/serviceAccent'
 import { fmtDateOnly } from '../utils/time'
+import PageSpinner from '../components/PageSpinner'
 
 interface Service {
   id: number
@@ -79,6 +80,10 @@ function fmtDate(v: string | null) {
   return Number.isNaN(d.getTime()) ? v : fmtDateOnly(d)
 }
 
+// The episodes pill doubles as a filter: all → missing → downloaded → all.
+type EpisodeFilter = 'all' | 'missing' | 'downloaded'
+const NEXT_FILTER: Record<EpisodeFilter, EpisodeFilter> = { all: 'missing', missing: 'downloaded', downloaded: 'all' }
+
 function episodeStatus(ep: EpisodeItem): { label: string; className: string } {
   if (ep.has_file) return { label: 'Downloaded', className: 'text-teal-300' }
   if (ep.air_date && new Date(ep.air_date).getTime() > Date.now()) return { label: 'Upcoming', className: 'text-slate-400' }
@@ -97,10 +102,13 @@ export default function SeriesSeasons() {
   const accent = getServiceAccent(service?.type ?? '')
 
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null)
+  const [episodeFilter, setEpisodeFilter] = useState<EpisodeFilter>('all')
   const [episodesBySeason, setEpisodesBySeason] = useState<Record<number, EpisodeItem[]>>({})
   const [episodesLoading, setEpisodesLoading] = useState(false)
   const [seasonBusy, setSeasonBusy] = useState<Set<number>>(new Set())
   const [episodeBusy, setEpisodeBusy] = useState<Set<number>>(new Set())
+  // Sonarr's own word on how an episode search went, shown beside its button.
+  const [episodeNote, setEpisodeNote] = useState<Record<number, string>>({})
   const [actionError, setActionError] = useState('')
 
   const [deleteSeriesOpen, setDeleteSeriesOpen] = useState(false)
@@ -268,11 +276,29 @@ export default function SeriesSeasons() {
     }
   }
 
+  // Sonarr runs the search in the background; follow its command until it
+  // finishes, so the button spins for the search itself, not just the click.
   async function searchEpisode(ep: EpisodeItem) {
     if (!id) return
     setEpisodeBusy((b) => new Set(b).add(ep.id))
+    setEpisodeNote((n) => ({ ...n, [ep.id]: '' }))
     try {
-      await api.post(`/services/${id}/episodes/${ep.id}/search`)
+      const res = await api.post<{ command_id?: number | null }>(`/services/${id}/episodes/${ep.id}/search`)
+      if (res.command_id != null) {
+        const deadline = Date.now() + 5 * 60 * 1000
+        let cmd: { status: string; message: string } = { status: 'queued', message: '' }
+        while ((cmd.status === 'queued' || cmd.status === 'started') && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 2000))
+          cmd = await api.get<{ status: string; message: string }>(`/services/${id}/commands/${res.command_id}`)
+        }
+        if (cmd.status === 'completed') {
+          setEpisodeNote((n) => ({ ...n, [ep.id]: cmd.message || 'Search finished' }))
+        } else if (cmd.status === 'queued' || cmd.status === 'started') {
+          setEpisodeNote((n) => ({ ...n, [ep.id]: 'Still searching in Sonarr' }))
+        } else {
+          setActionError(`Search ${cmd.status}${cmd.message ? `: ${cmd.message}` : ''}`)
+        }
+      }
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Failed to trigger search')
     } finally {
@@ -353,7 +379,7 @@ export default function SeriesSeasons() {
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading && !series ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : series ? (
         <>
           {/* Header: fanart banner + title/metadata overlay. The art sits
@@ -386,7 +412,27 @@ export default function SeriesSeasons() {
                   {series.year_range && <span className="metadata-pill">{series.year_range}</span>}
                   <span className="metadata-pill capitalize">{series.status}</span>
                   <span className="metadata-pill">{series.season_count} season{series.season_count === 1 ? '' : 's'}</span>
-                  <span className="metadata-pill">{series.episode_file_count} / {series.episode_count} episodes</span>
+                  <button
+                    onClick={() => setEpisodeFilter((f) => NEXT_FILTER[f])}
+                    title={
+                      episodeFilter === 'all'
+                        ? 'Show missing episodes only'
+                        : episodeFilter === 'missing'
+                          ? 'Show downloaded episodes only'
+                          : 'Show all episodes'
+                    }
+                    className={clsx(
+                      'metadata-pill cursor-pointer hover:border-slate-500 transition-colors',
+                      episodeFilter === 'missing' && 'text-amber-300 border-amber-700',
+                      episodeFilter === 'downloaded' && 'text-teal-300 border-teal-700',
+                    )}
+                  >
+                    {episodeFilter === 'all'
+                      ? `${series.episode_file_count} / ${series.episode_count} episodes`
+                      : episodeFilter === 'missing'
+                        ? `${Math.max(series.episode_count - series.episode_file_count, 0)} missing · showing missing`
+                        : `${series.episode_file_count} downloaded · showing downloaded`}
+                  </button>
                   {series.network && <span className="metadata-pill">{series.network}</span>}
                   <span className="metadata-pill">{fmtBytes(series.size_on_disk)}</span>
                 </div>
@@ -433,9 +479,23 @@ export default function SeriesSeasons() {
 
           {/* Seasons — accordion, one open at a time */}
           <div className="flex flex-col gap-2">
-            {series.seasons.map((season) => {
+            {series.seasons
+              .filter((season) =>
+                episodeFilter === 'missing'
+                  ? season.episode_file_count < season.episode_count
+                  : episodeFilter === 'downloaded'
+                    ? season.episode_file_count > 0
+                    : true,
+              )
+              .map((season) => {
               const isOpen = expandedSeason === season.season_number
-              const episodes = episodesBySeason[season.season_number]
+              const episodes = episodesBySeason[season.season_number]?.filter((ep) =>
+                episodeFilter === 'missing'
+                  ? episodeStatus(ep).label === 'Missing'
+                  : episodeFilter === 'downloaded'
+                    ? ep.has_file
+                    : true,
+              )
               return (
                 <div
                   key={season.season_number}
@@ -493,7 +553,9 @@ export default function SeriesSeasons() {
                       {episodesLoading && !episodes ? (
                         <p className="text-slate-500 text-sm py-4 text-center">Loading episodes…</p>
                       ) : !episodes || episodes.length === 0 ? (
-                        <p className="text-slate-500 text-sm py-4 text-center">No episodes found.</p>
+                        <p className="text-slate-400 text-sm py-4 text-center">
+                          {episodeFilter === 'all' ? 'No episodes found.' : `No ${episodeFilter} episodes in this season.`}
+                        </p>
                       ) : (
                         <div className="overflow-x-auto -mx-3 sm:mx-0">
                           <table className="w-full text-sm min-w-[560px] sm:min-w-0">
@@ -548,17 +610,29 @@ export default function SeriesSeasons() {
                                           <TrashIcon className="w-3.5 h-3.5" />
                                         </button>
                                       ) : (
-                                        <button
-                                          onClick={() => searchEpisode(ep)}
-                                          disabled={busy}
-                                          title="Search for episode"
-                                          className={clsx(
-                                            'p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-600 disabled:opacity-50 transition-colors',
-                                            accent.text,
+                                        <span className="inline-flex items-center gap-2">
+                                          {episodeNote[ep.id] && !busy && (
+                                            <span className="text-xs text-slate-300 max-w-[14rem] truncate" title={episodeNote[ep.id]}>
+                                              {episodeNote[ep.id]}
+                                            </span>
                                           )}
-                                        >
-                                          <SearchIcon className="w-3.5 h-3.5" />
-                                        </button>
+                                          <button
+                                            onClick={() => searchEpisode(ep)}
+                                            disabled={busy}
+                                            title={busy ? 'Searching…' : 'Search for episode'}
+                                            className={clsx(
+                                              'p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-600 transition-colors',
+                                              busy ? 'cursor-default' : 'disabled:opacity-50',
+                                              accent.text,
+                                            )}
+                                          >
+                                            {busy ? (
+                                              <SpinnerIcon className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                              <SearchIcon className="w-3.5 h-3.5" />
+                                            )}
+                                          </button>
+                                        </span>
                                       )}
                                     </td>
                                   </tr>

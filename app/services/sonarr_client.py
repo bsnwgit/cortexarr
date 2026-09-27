@@ -41,7 +41,7 @@ __all__ = [
     "set_series_monitored", "set_episode_monitored", "set_season_monitored",
     "search_episode", "search_season",
     "delete_episode_file", "delete_series",
-    "remove_queue_item", "import_queue_item",
+    "remove_queue_item", "import_queue_item", "get_series_progress", "get_command",
 ]
 
 
@@ -120,7 +120,29 @@ async def get_queue(base_url: str, api_key: str, page_size: int = 50) -> list[di
             "messages": messages,
             "episode_id": r.get("episodeId"),
             "download_id": r.get("downloadId"),
+            "season_number": r.get("seasonNumber"),
+            "added": r.get("added"),
         })
+    return out
+
+
+async def get_series_progress(base_url: str, api_key: str) -> list[dict[str, Any]]:
+    """Every series with its per-season episode counts — what request
+    tracking (app/tracking.py) needs, in one call for the whole library."""
+    data = await _get(base_url, api_key, "/api/v3/series")
+    out = []
+    for s in data if isinstance(data, list) else []:
+        seasons = {}
+        for season in s.get("seasons") or []:
+            st = season.get("statistics") or {}
+            seasons[season.get("seasonNumber")] = {
+                # Sonarr's episodeCount: monitored episodes that have aired (or have a file).
+                "aired": st.get("episodeCount") or 0,
+                "files": st.get("episodeFileCount") or 0,
+                "total": st.get("totalEpisodeCount") or 0,
+            }
+        out.append({"id": s.get("id"), "title": s.get("title", ""), "tvdb_id": s.get("tvdbId"),
+                    "tmdb_id": s.get("tmdbId"), "added": s.get("added"), "seasons": seasons})
     return out
 
 
@@ -374,9 +396,15 @@ async def get_season_history(base_url: str, api_key: str, series_id: int, season
     return out
 
 
-async def search_episode(base_url: str, api_key: str, episode_id: int) -> None:
-    """Trigger Sonarr to search for one episode's release."""
-    await _post(base_url, api_key, "/api/v3/command", {"name": "EpisodeSearch", "episodeIds": [episode_id]})
+async def search_episode(base_url: str, api_key: str, episode_id: int) -> Any:
+    """Trigger Sonarr to search for one episode's release. Returns the
+    command id, to follow with get_command until the search is done."""
+    cmd = await _post(base_url, api_key, "/api/v3/command", {"name": "EpisodeSearch", "episodeIds": [episode_id]})
+    return cmd.get("id") if isinstance(cmd, dict) else None
+
+
+async def get_command(base_url: str, api_key: str, command_id: int) -> dict[str, Any]:
+    return await arr_http.command_status(_APP, base_url, api_key, command_id)
 
 
 async def search_season(base_url: str, api_key: str, series_id: int, season_number: int) -> None:

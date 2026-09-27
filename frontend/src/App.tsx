@@ -12,6 +12,8 @@ import SettingsPage from './pages/Settings'
 import Logs from './pages/Logs'
 import ApiTokens from './pages/ApiTokens'
 import Alerts from './pages/Alerts'
+import Tracking from './pages/Tracking'
+import MyNotifications from './pages/MyNotifications'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -41,6 +43,8 @@ function AppRoutes() {
         <Route path="logs" element={<Logs />} />
         <Route path="tokens" element={<ApiTokens />} />
         <Route path="alerts" element={<Alerts />} />
+        <Route path="tracking" element={<Tracking />} />
+        <Route path="notifications" element={<MyNotifications />} />
       </Route>
     </Routes>
   )

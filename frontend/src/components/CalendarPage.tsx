@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import CalendarGrid, { type GridEvent } from './CalendarGrid'
 import { getServiceAccent } from '../utils/serviceAccent'
+import PageSpinner from './PageSpinner'
 
 function monthRange(month: Date): { start: string; end: string } {
   const start = new Date(month.getFullYear(), month.getMonth(), 1)
@@ -119,7 +120,7 @@ export default function CalendarPage({ serviceId, serviceType }: { serviceId: st
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : (
         <CalendarGrid month={month} events={events} accent={getServiceAccent(serviceType)} />
       )}

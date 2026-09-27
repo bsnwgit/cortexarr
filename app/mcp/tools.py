@@ -24,6 +24,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.api import alerts as alerts_api
 from app.api import audit as audit_api
+from app.api import tracking as tracking_api
 from app.api import services as svc
 from app.api import settings as settings_api
 from app.api import status as status_api
@@ -139,6 +140,10 @@ class ActivityArgs(BaseModel):
         default=None, description="Only this pipeline")
 
 
+class TrackingArgs(BaseModel):
+    active_only: bool = Field(default=True, description="Leave out requests that are already available")
+
+
 class LimitArgs(BaseModel):
     limit: int = Field(default=100, ge=1, le=1000)
 
@@ -232,6 +237,10 @@ class NotificationPrefArgs(ChannelArgs):
     target: str = Field(default="", max_length=500, description="Address / URL / topic / phone number")
 
 
+class CommandArgs(ServiceArg):
+    command_id: int = Field(description="From a search tool's result")
+
+
 class RuleIdArgs(BaseModel):
     rule_id: int = Field(description="Rule id, from list_alert_rules")
 
@@ -242,8 +251,8 @@ class UpdateRuleArgs(RuleIdArgs, alerts_api.RuleUpdate):
 
 class FixArgs(ServiceArg):
     key: str = Field(min_length=1, max_length=200, description="The problem's key, from get_active_problems")
-    action: Literal["import", "retry_download", "retry_request", "test_connection"] = Field(
-        description="One of the problem's suggested actions")
+    action: Literal["import", "retry_download", "retry_request", "test_connection",
+                    "approve_request", "search_request"] = Field(description="One of the problem's suggested actions")
 
 
 class RemoveStuckArgs(ServiceArg):
@@ -252,15 +261,23 @@ class RemoveStuckArgs(ServiceArg):
         description="remove: drop it; redownload: drop it, blocklist the release, search for another")
 
 
+class ClearRequestArgs(ServiceArg):
+    key: str = Field(min_length=1, max_length=200, description="The problem's key, from get_active_problems")
+
+
 class BulkFixArgs(BaseModel):
     items: list[alerts_api.ProblemRef] = Field(min_length=1, max_length=500,
                                                description="Problems as {service_id, key}, from get_active_problems")
-    action: Literal["import", "retry_download", "retry_request", "test_connection"]
+    action: Literal["import", "retry_download", "retry_request", "test_connection", "approve_request", "search_request"]
 
 
 class BulkRemoveArgs(BaseModel):
     items: list[alerts_api.ProblemRef] = Field(min_length=1, max_length=500)
     action: Literal["remove", "redownload"]
+
+
+class BulkClearRequestArgs(BaseModel):
+    items: list[alerts_api.ProblemRef] = Field(min_length=1, max_length=500)
 
 
 class UnsnoozeArgs(ServiceArg):
@@ -349,6 +366,10 @@ TOOLS: list[Tool] = [
     Tool("get_series_calendar", "Calendar entries for one series between two dates.",
          SeriesRangeArgs,
          lambda db, u, a: svc.series_calendar(a.service_id, a.series_id, a.start, a.end, u, db)),
+    Tool("get_command_status",
+         "How a search started with search_episode is going: queued, started, completed or failed, with Sonarr's "
+         "message (e.g. how many releases it grabbed).",
+         CommandArgs, lambda db, u, a: svc.command_status(a.service_id, a.command_id, u, db)),
     Tool("get_movie", "One Radarr movie: summary, release dates, and the file on disk.",
          MovieArgs, lambda db, u, a: svc.movie_detail(a.service_id, a.movie_id, u, db)),
     Tool("get_movie_history", "Grab/import/failure history for one movie.",
@@ -365,6 +386,10 @@ TOOLS: list[Tool] = [
          "What's wrong right now, as the alert engine sees it: unreachable/erroring services, stuck queue items, "
          "recent failed downloads, failed requests and reported issues — with when each was first seen.",
          NoArgs, lambda db, u, a: alerts_api.active_problems(u, db)),
+    Tool("get_request_tracking",
+         "Where each Seerr request is: waiting for approval, sending to Sonarr/Radarr, searching, downloading, "
+         "importing, or available — with since when, and episode counts for TV.",
+         TrackingArgs, lambda db, u, a: tracking_api.request_tracking(u, db, a.active_only)),
     Tool("list_alert_rules", "The alert rules: which event, which service, threshold, channels.",
          NoArgs, lambda db, u, a: alerts_api.list_rules(u, db)),
     Tool("get_alert_log", "Alerts sent, newest first, with each channel's result.",
@@ -446,8 +471,9 @@ TOOLS: list[Tool] = [
          kind="write"),
     Tool("create_alert_rule",
          "Add an alert rule. Events: unreachable, error, warning (a service's health), stuck (Sonarr/Radarr queue "
-         "item), download_failed (NZBGet/SABnzbd), request_issue (Seerr). threshold_minutes: how long it must "
-         "persist first. Omit service_id for every service.",
+         "item), download_failed (NZBGet/SABnzbd), request_issue (Seerr), and stalled_approval / stalled_sending / "
+         "stalled_searching / stalled_downloading / stalled_importing (a Seerr request in that stage too long). "
+         "threshold_minutes: how long it must persist first. Omit service_id for every service.",
          alerts_api.RuleIn, lambda db, u, a: alerts_api.create_rule(a, u, db),
          min_role="admin", kind="write"),
     Tool("update_alert_rule", "Change an alert rule. Omitted fields are left alone; all_services=true clears service_id.",
@@ -491,9 +517,23 @@ TOOLS: list[Tool] = [
          "blocklisting each release and searching for another (redownload).",
          BulkRemoveArgs, lambda db, u, a: alerts_api.fix_bulk(alerts_api.BulkFixIn(**a.model_dump()), u, db),
          min_role="admin", kind="destructive"),
+    Tool("clear_request",
+         "Delete a Seerr request outright (any status) — for a request stuck stalled that you don't want any "
+         "more, e.g. the title was deleted so Seerr never learns it's gone. Only offered where get_active_problems "
+         "lists clear_request among the problem's actions.",
+         ClearRequestArgs,
+         lambda db, u, a: alerts_api.fix(alerts_api.FixIn(service_id=a.service_id, key=a.key, action="clear_request"), u, db),
+         min_role="admin", kind="destructive"),
+    Tool("clear_requests", "Delete many Seerr requests outright at once (any status); all must offer clear_request.",
+         BulkClearRequestArgs,
+         lambda db, u, a: alerts_api.fix_bulk(alerts_api.BulkFixIn(items=a.items, action="clear_request"), u, db),
+         min_role="admin", kind="destructive"),
     Tool("snooze_problems", "Snooze or acknowledge many current problems at once; all must have the same set of actions.",
          alerts_api.BulkSnoozeIn, lambda db, u, a: alerts_api.snooze_bulk(a, u, db),
          min_role="analyst", kind="write"),
+    Tool("test_my_notification", "Send a test to this user's own saved address for one channel.",
+         ChannelArgs, lambda db, u, a: users_api.test_my_notification(users_api.MyTest(channel=a.channel), u, db),
+         kind="write"),
     Tool("create_user", "Add a Cortexarr user.",
          CreateUserArgs, lambda db, u, a: users_api.create_user(users_api.CreateUser(**a.model_dump()), u, db),
          min_role="admin", kind="write"),

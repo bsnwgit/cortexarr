@@ -20,6 +20,9 @@ ACTIONS: dict[str, tuple[str, bool]] = {
     "retry_download": ("Retry download", False),
     "retry_request": ("Retry request", False),
     "test_connection": ("Test connection", False),
+    "approve_request": ("Approve", False),
+    "search_request": ("Search now", False),
+    "clear_request": ("Clear", True),
 }
 DESTRUCTIVE = {a for a, (_, d) in ACTIONS.items() if d}
 
@@ -83,10 +86,32 @@ def diagnose(problem: dict[str, Any]) -> dict[str, Any]:
     elif event == "request_issue":
         if key.startswith("issue:request-"):
             advice = ("Seerr couldn't send this request on to Sonarr/Radarr. Fix the cause shown (often the "
-                      "Sonarr/Radarr connection in Seerr's settings), then retry it.")
-            actions = ["retry_request"]
+                      "Sonarr/Radarr connection in Seerr's settings), then retry it — or Clear it if you don't "
+                      "want it any more.")
+            actions = ["retry_request", "clear_request"]
         else:
             advice = "Someone reported a problem with this title. Review it in Seerr."
+    elif event == "stalled_approval":
+        advice = "This request is waiting for someone to approve it. Approve it here, or decline it in Seerr."
+        actions = ["approve_request", "clear_request"]
+    elif event == "stalled_sending":
+        advice = ("Seerr approved this request but it isn't in Sonarr/Radarr yet. Seerr usually sends it within "
+                  "a minute — if it hasn't, check Seerr's Sonarr/Radarr settings (the server, quality profile and "
+                  "root folder it sends to). If you don't want it any more — the title was deleted, say — Clear "
+                  "removes the request from Seerr outright.")
+        actions = ["clear_request"]
+    elif event == "stalled_searching":
+        advice = ("Sonarr/Radarr has this but hasn't found a release it will take. Search now to try again; if "
+                  "nothing turns up, the indexers may not have it, or the quality profile may be too strict.")
+        actions = ["search_request", "clear_request"]
+    elif event == "stalled_downloading":
+        advice = ("This has been downloading a long time. Check the download client — it may be paused, slow, or "
+                  "stuck on a download with missing blocks.")
+        actions = ["clear_request"]
+    elif event == "stalled_importing":
+        advice = ("The download finished but hasn't imported. It shows as a stuck queue item on Sonarr/Radarr — "
+                  "fix it there with Import it or Remove & search again.")
+        actions = ["clear_request"]
 
     return {"advice": advice, "actions": [
         {"id": a, "label": ACTIONS[a][0], "destructive": ACTIONS[a][1]} for a in actions

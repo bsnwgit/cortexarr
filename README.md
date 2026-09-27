@@ -27,6 +27,10 @@ leaving the page.
 - **NZBGet / SABnzbd** — live speed, time left, free disk, the queue with
   progress and post-processing stage, and history with failure reasons and
   **Retry**. Pause/resume a download or everything at once.
+- **Request tracking** — every Seerr request followed through approval,
+  Sonarr/Radarr, searching, downloading and import to available, with how
+  long it's been in its stage (and episode counts for TV); alert rules flag
+  a request that stalls in a stage longer than you set.
 - **Dashboard** — requests run full width across the top; below, one card
   per service with nested cards for whatever needs attention. Each card can
   be refreshed on its own or opened in the service's own web UI.
@@ -44,20 +48,25 @@ leaving the page.
   failed or an issue reported — on which services, after how long, through
   which channels, with an optional "resolved" message when it clears and
   reminders while it lasts. Snooze or acknowledge a known problem without
-  muting the whole rule.
+  muting the whole rule, and set a digest window so a bad night is one
+  message every so often, not dozens.
 
 ## Requested features
 
 Planned but not built yet — kept here so none of it gets lost:
 
-- **End-to-end request tracking** — follow one request from Seerr through
-  Sonarr/Radarr, the download client, and import, and flag anything that
-  stalls at a stage for longer than a threshold you set per stage.
-- **Notification digests** — batch alerts into one message per window. The
-  setting exists; batching isn't wired up.
-- **Per-user notification preferences page** — supported by the API, no
-  page in the UI yet.
 - **User management page** — users are managed through the API for now.
+- **Mass filtering at series level** — filter the series library by state
+  (e.g. series with missing episodes) and select the matching series to act
+  on together.
+- **Suggested alert rules** — a starter set of common alerts (a service
+  unreachable, a queue item stuck, a request stalled) offered as one-click
+  templates when no rules exist yet, so it's obvious what's worth alerting
+  on instead of finding out nothing fires until you add one yourself.
+- **Force sync with reality** — compare what Seerr says (requested,
+  processing, available) with what's really in Sonarr/Radarr, the download
+  client, and on disk; show every mismatch, and bring them back in line in
+  one step.
 - **Push instead of poll** — accept Sonarr/Radarr webhooks rather than only
   polling them.
 - **History and trends** — reporting over time, beyond the live views.
