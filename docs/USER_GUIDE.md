@@ -36,6 +36,16 @@ history), *Missing* (released movies with no file), and *Calendar* (a month
 grid of release dates — in cinemas, digital, physical). An upcoming release
 date on a movie's page links to that month on the Calendar.
 
+**Seerr** — *Requests* (recent requests with who asked and their status,
+filterable by status; a request still pending approval has **Approve** and
+**Decline**, and a failed one has **Retry**, which re-sends it to
+Sonarr/Radarr) and *Issues* (requests that failed to reach Sonarr/Radarr —
+with the reason from Seerr's log when it still has it, and **Retry** — plus
+open problems users reported, like missing audio on an episode). On the
+Dashboard, Seerr runs full width above the other services: a strip of
+recent request posters, needs-attention first, with counts that link to
+each list.
+
 Deleting a series, movie, or file asks you to type `Delete` to confirm.
 Removing a series or movie from Sonarr/Radarr does not delete its files
 from disk.

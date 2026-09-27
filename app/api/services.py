@@ -15,7 +15,7 @@ from app import audit
 from app.crypto import decrypt_str, encrypt_str
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
-from app.services import arr_http, radarr_client, sonarr_client
+from app.services import arr_http, radarr_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
@@ -28,7 +28,7 @@ _MASK = "••••••••"
 # entry here. Each client implements the views its media model has — a
 # view (or route) the client has no function for answers 404/400 rather
 # than a 500, so e.g. Radarr has no "series" and Sonarr has no "movies".
-_DETAIL_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client}
+_DETAIL_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client}
 _IMPLEMENTED_TYPES = set(_DETAIL_CLIENTS)
 
 # view name -> client function name. Calendar has its own route (start/end).
@@ -38,6 +38,8 @@ _DETAIL_VIEWS = {
     "series": "get_series",
     "movies": "get_movies",
     "history": "get_history",
+    "requests": "get_requests",
+    "issues": "get_issues",
 }
 
 
@@ -117,6 +119,8 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
     # An unreachable service still saves — it may just be down right now.
     if body.api_key:
         actual = await arr_http.detect_app(body.base_url, body.api_key)
+        if not actual and await seerr_client.looks_like_seerr(body.base_url):
+            actual = "Seerr"
         if actual and actual.lower() != body.type:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -607,4 +611,33 @@ async def delete_movie_route(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="movie.delete", target_type="service_instance",
                         target_id=service_id, detail={"movie_id": movie_id, "delete_files": delete_files})
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Requests (Seerr) — approve/decline a pending request, retry a failed one.
+# ---------------------------------------------------------------------------
+
+_REQUEST_ACTIONS = {"approve": "approve_request", "decline": "decline_request", "retry": "retry_request"}
+
+
+@router.post("/{service_id}/requests/{request_id}/{action}")
+async def request_action(
+    service_id: int, request_id: int, action: str, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The Requests tab's Approve/Decline (pending requests only — the UI
+    only offers them there, and Seerr refuses them otherwise) and Retry
+    (failed requests)."""
+    fn_name = _REQUEST_ACTIONS.get(action)
+    if not fn_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown action: {action}")
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, fn_name)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, request_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action=f"request.{action}", target_type="service_instance",
+                        target_id=service_id, detail={"request_id": request_id})
     return {"ok": True}

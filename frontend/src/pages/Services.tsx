@@ -141,13 +141,13 @@ export default function Services() {
               <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="sonarr">Sonarr</option>
                 <option value="radarr">Radarr</option>
-                <option value="seerr" disabled>Seerr (coming soon)</option>
+                <option value="seerr">Seerr</option>
                 <option value="nzbget" disabled>NZBGet (coming soon)</option>
                 <option value="sabnzbd" disabled>SABnzbd (coming soon)</option>
               </select>
             </Field>
             <Field label="Base URL">
-              <input className="input" placeholder={`http://192.168.1.50:${form.type === 'radarr' ? 7878 : 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </Field>
             <Field label="API key">
               <input className="input" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />

@@ -5,6 +5,7 @@ import ServiceIcon from './ServiceIcon'
 import StatusPill, { type StatusInfo } from './StatusPill'
 import SonarrDashboardCard from './SonarrDashboardCard'
 import RadarrDashboardCard from './RadarrDashboardCard'
+import SeerrDashboardCard from './SeerrDashboardCard'
 import { getServiceAccent } from '../utils/serviceAccent'
 
 export interface DashboardService extends StatusInfo {
@@ -39,6 +40,7 @@ function PlainServiceCard({ service }: { service: DashboardService }) {
 const RICH_CARDS: Record<string, (props: { service: DashboardService }) => ReactNode> = {
   sonarr: SonarrDashboardCard,
   radarr: RadarrDashboardCard,
+  seerr: SeerrDashboardCard,
 }
 
 export default function ServiceCard({ service }: { service: DashboardService }) {

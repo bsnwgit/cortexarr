@@ -9,6 +9,8 @@ import MissingGrouped from '../components/MissingGrouped'
 import MissingMovies from '../components/MissingMovies'
 import MovieLibraryList from '../components/MovieLibraryList'
 import CalendarPage from '../components/CalendarPage'
+import SeerrRequests from '../components/SeerrRequests'
+import SeerrIssues from '../components/SeerrIssues'
 import { getServiceAccent } from '../utils/serviceAccent'
 
 interface Service {
@@ -33,6 +35,10 @@ const TABS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
     { key: 'downloading', label: 'Downloading' },
     { key: 'missing', label: 'Missing' },
     { key: 'calendar', label: 'Calendar' },
+  ],
+  seerr: [
+    { key: 'requests', label: 'Requests' },
+    { key: 'issues', label: 'Issues' },
   ],
 }
 
@@ -143,6 +149,10 @@ export default function ServiceDetail() {
         )
       ) : tab === 'calendar' ? (
         <CalendarPage serviceId={id ?? ''} serviceType={service.type} />
+      ) : tab === 'requests' ? (
+        <SeerrRequests serviceId={id ?? ''} accent={accent} />
+      ) : tab === 'issues' ? (
+        <SeerrIssues serviceId={id ?? ''} accent={accent} />
       ) : null}
     </div>
   )
