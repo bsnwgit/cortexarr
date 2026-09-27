@@ -2,14 +2,18 @@
 
 ## Your account
 
-Click your username in the top-right corner for **Services** (the list of
-monitored services); under **Monitoring**, **Alerts** (current problems,
-the alert rules, and what's been sent — see the
-[Admin Guide](ADMIN_GUIDE.md#alert-rules)) and **Logs**; then **Settings**
-and **API tokens**; and under **User**, **My notifications**, **Change
-password**, and **Log out**.
-Admins also see **Add service** under Services (see the
+Click your username in the top-right corner for **Settings** — the
+management hub, as tabs: **General** (time zone, retention, self-update),
+**Notifications** (email/webhook/ntfy/SMS setup, digest window),
+**Services**, **Users** (admins only), and **API tokens** — and, under
+**User**, **My notifications**, **Change password**, and **Log out**.
+Admins also see **New service** under Settings → Services (see the
 [Admin Guide](ADMIN_GUIDE.md)).
+
+The top-nav **Notifications** tab (next to Tracking) is where you watch,
+not configure: **Alerts** (current problems, the alert rules, and what's
+been sent — see the [Admin Guide](ADMIN_GUIDE.md#alert-rules)),
+**Activities** and **Audit Log**.
 
 ## Dashboard
 
@@ -65,6 +69,8 @@ Alerts for why).
 The dropdown at the top right filters the list — **In progress** (the default),
 **All**, each stage, *Not released yet*, *Failed in Seerr* — each with its
 count; the filter is kept in the page address, so a view can be bookmarked.
+When a filter mixes stages, *Not released yet* always sorts to the bottom —
+it isn't a problem, so it never sits above one.
 
 Click a request to go straight to it where it's at in the pipeline:
 waiting for approval opens Seerr's pending requests; downloading or
@@ -163,12 +169,12 @@ estimated time), free disk space, anything post-processing, and **Pause all
 
 ![Download history](images/downloads-history.png)
 
-## Logs
+## Notifications (Alerts, Activities, Audit Log)
 
-User menu → *Monitoring* → **Logs**.
+Top nav → **Notifications**, next to Tracking. Three sub-tabs:
 
-![Activity log](images/activity-log.png)
-
+- **Alerts** — current problems, the alert rules, and what's been sent.
+  See the [Admin Guide](ADMIN_GUIDE.md#alert-rules) for the details.
 - **Activities** — one feed across every service: what Sonarr and Radarr
   grabbed and imported, request changes in Seerr, and finished downloads.
   The dropdown narrows it to one pipeline (Series, Movies, Requests,
@@ -176,13 +182,15 @@ User menu → *Monitoring* → **Logs**.
 - **Audit Log** — every change made in Cortexarr, who made it, and when:
   services added or changed, monitor toggles, searches, deletes, approvals.
 
-## Notification preferences
+![Activity log](images/activity-log.png)
+
+## My notifications
 
 User menu → *User* → **My notifications** is where *you* get alerts: your
 own email address, Slack/Discord webhook, ntfy topic, or phone number, each
 turned on or off separately. Alerts go to these as well as to the
 recipients an admin set under Settings; what triggers an alert is the
-rules under Alerts.
+rules under Notifications.
 
 A channel only works once an admin has set it up under Settings — the page
 says so when one isn't. Each address is checked when you save it (a real
@@ -196,7 +204,7 @@ Cortexarr is an MCP server: an AI tool that speaks MCP can check your
 pipeline's health, look through queues, libraries, requests and history,
 and — with the right token — act on them, the same as you can in the web UI.
 
-User menu → **API tokens** → **New token**. Give it a name you'll recognise
+Settings → **API tokens** → **New token**. Give it a name you'll recognise
 and an expiry, then copy the token straight away — it's shown only once.
 The page also gives a ready-made client config: the server URL is
 `http(s)://<your Cortexarr>/mcp`, and the token goes in an

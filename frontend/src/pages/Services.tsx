@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import ServiceIcon from '../components/ServiceIcon'
 import StatusPill, { type StatusInfo } from '../components/StatusPill'
 import { getServiceAccent } from '../utils/serviceAccent'
@@ -32,6 +33,8 @@ const EMPTY_FORM = {
 
 export default function Services() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [services, setServices] = useState<Service[]>([])
   // The add form is opened from the user menu's "Add service" (?add=1), so
   // it's driven by the URL rather than a button on this page.
@@ -133,6 +136,14 @@ export default function Services() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-slate-100">{showForm ? 'Add a service' : 'Monitored services'}</h2>
+        {isAdmin && !showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium px-4 py-2"
+          >
+            New service
+          </button>
+        )}
       </div>
 
       {showForm && (

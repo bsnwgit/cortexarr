@@ -112,7 +112,11 @@ export default function Tracking() {
   const all = data?.requests ?? []
   const count = (f: string) =>
     f === 'all' ? all.length : f === 'active' ? all.filter((r) => !DONE.has(r.stage)).length : all.filter((r) => r.stage === f).length
-  const shown = all.filter((r) => (filter === 'all' ? true : filter === 'active' ? !DONE.has(r.stage) : r.stage === filter))
+  // "Not released yet" isn't a problem to look at, so it never belongs above
+  // something that is — sort it below everything else, whatever the filter.
+  const shown = all
+    .filter((r) => (filter === 'all' ? true : filter === 'active' ? !DONE.has(r.stage) : r.stage === filter))
+    .sort((a, b) => Number(a.stage === 'upcoming') - Number(b.stage === 'upcoming'))
   const filters = [
     { key: 'active', label: 'In progress' },
     { key: 'all', label: 'All' },
@@ -230,7 +234,7 @@ export default function Tracking() {
       )}
       <p className="mt-4 text-xs text-slate-400">
         To be told when a request stays too long in a stage, add a “Request …” rule under{' '}
-        <Link to="/alerts" className="underline hover:text-slate-200">Alerts</Link>.
+        <Link to="/alerts" className="underline hover:text-slate-200">Notifications</Link>.
       </p>
     </div>
   )

@@ -1,14 +1,27 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, ApiError } from '../api/client'
-import { allTimeZones, setTimeZone } from '../utils/time'
 import { resultText } from '../utils/notifyResult'
 import PageSpinner from '../components/PageSpinner'
+import Row from '../components/SettingsRow'
 
 type Settings = Record<string, any>
 
 const MASK = '••••••••'
+// Every key this tab owns — sent on save, so the General tab's fields are
+// never touched from here (each tab writes only what it shows).
+const KEYS = [
+  'notify_email_enabled', 'notify_email_smtp_host', 'notify_email_smtp_port', 'notify_email_smtp_tls',
+  'notify_email_username', 'notify_email_password', 'notify_email_from', 'notify_email_default_to',
+  'notify_webhook_enabled', 'notify_webhook_url',
+  'notify_ntfy_enabled', 'notify_ntfy_server', 'notify_ntfy_topic', 'notify_ntfy_auth_token',
+  'notify_sms_enabled', 'notify_sms_twilio_account_sid', 'notify_sms_twilio_auth_token',
+  'notify_sms_twilio_from_number', 'notify_sms_default_to',
+  'notify_batch_window_minutes',
+]
 
-export default function SettingsPage() {
+// The four notification channels, plus how often they're allowed to send
+// (the digest window) — split out from General, which is everything else.
+export default function SettingsNotifications() {
   const [settings, setSettings] = useState<Settings>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -27,11 +40,14 @@ export default function SettingsPage() {
     setSettings((s) => ({ ...s, [key]: value }))
   }
 
+  function ownUpdates() {
+    return Object.fromEntries(KEYS.map((k) => [k, settings[k]]))
+  }
+
   async function save() {
     setSaving(true)
     try {
-      await api.post('/settings/bulk', settings)
-      setTimeZone(settings.timezone)
+      await api.post('/settings/bulk', ownUpdates())
     } finally {
       setSaving(false)
     }
@@ -42,7 +58,7 @@ export default function SettingsPage() {
   async function test(channel: string) {
     setTestStatus((s) => ({ ...s, [channel]: 'Saving and sending…' }))
     try {
-      await api.post('/settings/bulk', settings)
+      await api.post('/settings/bulk', ownUpdates())
       const result = await api.post<{ status: string; detail: string }>('/settings/test-notification', { channel })
       setTestStatus((s) => ({ ...s, [channel]: resultText(result) }))
     } catch (err) {
@@ -54,8 +70,6 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <h2 className="text-lg font-semibold text-slate-100">Notifications &amp; settings</h2>
-
       <Section title="Email" enabled={settings.notify_email_enabled} onToggle={(v) => set('notify_email_enabled', v)} onTest={() => test('email')} testStatus={testStatus.email}>
         <Row label="SMTP host"><input className="input" value={settings.notify_email_smtp_host || ''} onChange={(e) => set('notify_email_smtp_host', e.target.value)} /></Row>
         <Row label="SMTP port"><input className="input" type="number" value={settings.notify_email_smtp_port || 587} onChange={(e) => set('notify_email_smtp_port', Number(e.target.value))} /></Row>
@@ -101,36 +115,10 @@ export default function SettingsPage() {
       </Section>
 
       <div className="bg-slate-925 border border-slate-800 rounded-xl p-4 space-y-3">
-        <h3 className="font-medium text-slate-100">General</h3>
-        <Row label="Time zone (for every time shown, and alert messages)">
-          <select className="input" value={settings.timezone || ''} onChange={(e) => set('timezone', e.target.value)}>
-            <option value="">Browser default — each viewer's own ({Intl.DateTimeFormat().resolvedOptions().timeZone})</option>
-            {allTimeZones().map((z) => (
-              <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>
-            ))}
-          </select>
-        </Row>
+        <h3 className="font-medium text-slate-100">Digest</h3>
         <Row label="Alert digest window (minutes) — at most one message per channel this often; 0 sends each alert at once">
           <input className="input" type="number" min={0} value={settings.notify_batch_window_minutes ?? 0} onChange={(e) => set('notify_batch_window_minutes', Number(e.target.value))} />
         </Row>
-        <Row label="Health-check history retention (days)">
-          <input className="input" type="number" min={1} value={settings.health_retention_days ?? 30} onChange={(e) => set('health_retention_days', Number(e.target.value))} />
-        </Row>
-        <Row label="Self-update mode">
-          <select className="input" value={settings.self_update_mode || 'manual'} onChange={(e) => set('self_update_mode', e.target.value)}>
-            <option value="manual">Manual (notify only)</option>
-            <option value="auto">Auto (apply during window below)</option>
-          </select>
-        </Row>
-        {settings.self_update_mode === 'auto' && (
-          <Row label="Update window">
-            <div className="flex gap-2 items-center">
-              <input className="input" type="time" value={settings.self_update_window_start || '02:00'} onChange={(e) => set('self_update_window_start', e.target.value)} />
-              <span className="text-slate-500">to</span>
-              <input className="input" type="time" value={settings.self_update_window_end || '04:00'} onChange={(e) => set('self_update_window_end', e.target.value)} />
-            </div>
-          </Row>
-        )}
       </div>
 
       <button onClick={save} disabled={saving} className="rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2">
@@ -159,14 +147,5 @@ function Section({ title, enabled, onToggle, onTest, testStatus, children }: {
         </p>
       )}
     </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-sm text-slate-400 mb-1">{label}</span>
-      {children}
-    </label>
   )
 }

@@ -443,8 +443,6 @@ export default function Alerts() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-slate-100 mb-4">Alerts</h2>
-
       <Section
         title={
           groupFilter

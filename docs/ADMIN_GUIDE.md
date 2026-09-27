@@ -2,7 +2,7 @@
 
 ## Adding a monitored service
 
-Open the user menu (your username, top right) → **Add service**, pick a
+User menu → **Settings** → **Services** → **New service**. Pick a
 type (Sonarr, Radarr, Seerr, NZBGet, or SABnzbd), give it a name, base URL,
 and API key, then
 **Test connection** before saving — this checks the URL and key actually
@@ -26,7 +26,7 @@ Each service instance has its own poll interval and retry/backoff settings,
 so a fast-changing instance can be checked more often than a slow one
 without affecting the others.
 
-The **Services** page (user menu → *Services* → **Manage services**) lists every service with **Test** (re-run the
+**Settings → Services** lists every service with **Test** (re-run the
 connection check), **Maintenance mode**, and **Delete**.
 
 A read-only JSON summary of every service's health is served, without
@@ -41,9 +41,9 @@ planned reason and don't want alerts about it.
 
 ## Notifications
 
-Under **Settings** (user menu), each channel (email, webhook, ntfy, SMS) is
-configured and enabled independently, with a **Send test** button to
-confirm it actually works before relying on it.
+Under **Settings → Notifications**, each channel (email, webhook, ntfy,
+SMS) is configured and enabled independently, with a **Send test** button
+to confirm it actually works before relying on it.
 
 **Settings → General → Time zone** sets the zone every time in Cortexarr is
 shown in — tables, calendars (which day an episode lands on), and the
@@ -52,8 +52,8 @@ sees their own local time and alert messages are stamped in UTC.
 
 ### Alert rules
 
-Nothing is sent until you add a rule: user menu → **Alerts** → **New
-rule**. A rule is:
+Nothing is sent until you add a rule: top nav → **Notifications** →
+**Alerts** → **New rule**. A rule is:
 
 - **When** — one of:
   - *Service unreachable* — can't connect, or the key/login is rejected.
@@ -134,18 +134,18 @@ are handled once, and each problem shows how its fix went.
 
 ### Digests
 
-**Settings → General → Alert digest window** limits each channel to one
-message every so many minutes. The first alert after a quiet spell still
+**Settings → Notifications → Alert digest window** limits each channel
+to one message every so many minutes. The first alert after a quiet spell still
 goes out straight away; anything that fires within the window after it
 waits and goes out together as one digest when the window ends. **0** (the
 default) sends every alert as it happens. A rule's **Send test** is never
-held back. On the Alerts page, held alerts show as *queued* and each digest
+held back. On the Alerts tab, held alerts show as *queued* and each digest
 is listed when it's sent; a digest that fails to send is retried at the
 next window.
 
 ### Snooze and acknowledge
 
-Each current problem on the Alerts page has **Snooze**: silence it for an
+Each current problem on the Alerts tab has **Snooze**: silence it for an
 hour, 4 hours, a day, a week, a number of hours you type, or **until it
 clears** (acknowledged) — with an optional note saying why. A snoozed
 problem stays listed, marked with who snoozed it and until when; it just
@@ -168,7 +168,23 @@ through its channels.
   (The analyst role is reserved for future operational actions; today it
   has the same access as viewer.)
 
-Manage users via `/api/users` (a dedicated admin page is planned).
+**Settings → Users** (admins only — the tab doesn't show for anyone else)
+lists every user, with their role, when they were created, and when they
+last signed in.
+
+- **New user** — username, email, password, and role.
+- The **role** dropdown on each row changes it immediately.
+- **Deactivate** / **Reactivate** — a deactivated user can't sign in, but
+  stays on the list; nothing about them is deleted.
+- **Reset password** — sets a new one directly, no current password
+  needed, for someone who's forgotten theirs.
+- **Delete** — removes the user outright, along with their API tokens and
+  notification preferences (their name stays on past audit log entries).
+  Asks you to type `Delete` first.
+
+Cortexarr always keeps at least one active admin: demoting, deactivating,
+or deleting the last one is refused, so the instance can never end up with
+nobody able to manage it.
 
 ## MCP server and API tokens
 
@@ -193,4 +209,4 @@ couldn't do by hand. How users make tokens is in the
 
 Every change made in Cortexarr — services added or changed, monitor
 toggles, searches, deletes, approvals, retries, pauses, settings — is
-recorded under **Logs → Audit Log** (user menu → *Monitoring*) with who did it and when.
+recorded under **Notifications → Audit Log** with who did it and when.

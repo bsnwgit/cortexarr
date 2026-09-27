@@ -8,11 +8,13 @@ import Services from './pages/Services'
 import ServiceDetail from './pages/ServiceDetail'
 import SeriesSeasons from './pages/SeriesSeasons'
 import MovieDetail from './pages/MovieDetail'
-import SettingsPage from './pages/Settings'
-import Logs from './pages/Logs'
+import SettingsLayout from './pages/SettingsLayout'
+import SettingsGeneral from './pages/SettingsGeneral'
+import SettingsNotifications from './pages/SettingsNotifications'
+import Users from './pages/Users'
 import ApiTokens from './pages/ApiTokens'
-import Alerts from './pages/Alerts'
 import Tracking from './pages/Tracking'
+import Notifications from './pages/Notifications'
 import MyNotifications from './pages/MyNotifications'
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -35,15 +37,28 @@ function AppRoutes() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="services" element={<Services />} />
         <Route path="services/:id" element={<ServiceDetail />} />
         <Route path="services/:id/series/:seriesId" element={<SeriesSeasons />} />
         <Route path="services/:id/movies/:movieId" element={<MovieDetail />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="logs" element={<Logs />} />
-        <Route path="tokens" element={<ApiTokens />} />
-        <Route path="alerts" element={<Alerts />} />
+        {/* The management surface — was scattered across the user menu's
+            Services/Monitoring sections; now one tabbed hub. Alerts/Logs
+            moved back out to their own top-level Notifications tab. */}
+        <Route path="settings" element={<SettingsLayout />}>
+          <Route index element={<SettingsGeneral />} />
+          <Route path="notifications" element={<SettingsNotifications />} />
+          <Route path="services" element={<Services />} />
+          <Route path="users" element={<Users />} />
+          <Route path="tokens" element={<ApiTokens />} />
+        </Route>
         <Route path="tracking" element={<Tracking />} />
+        {/* Alerts, the activity feed, and the audit log — one top-nav
+            destination named "Notifications", after Tracking. Keeps the
+            original /alerts path so it doesn't collide with the personal
+            page below, which is user-level, not this. */}
+        <Route path="alerts" element={<Notifications />} />
+        {/* Personal channel targets (user menu → User → My notifications) —
+            unrelated to the system-level "Notifications" tab above; stays
+            at its original path. */}
         <Route path="notifications" element={<MyNotifications />} />
       </Route>
     </Routes>

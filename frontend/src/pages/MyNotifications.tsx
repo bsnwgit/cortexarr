@@ -97,7 +97,7 @@ export default function MyNotifications() {
       <h2 className="text-lg font-semibold text-slate-100 mb-1">My notifications</h2>
       <p className="text-sm text-slate-300 mb-4">
         Where <em>you</em> get alerts. They also go to whoever an admin set under Settings; what triggers an alert is set
-        by the rules under <Link to="/alerts" className="underline hover:text-slate-100">Alerts</Link>.
+        by the rules under <Link to="/alerts" className="underline hover:text-slate-100">Notifications</Link>.
       </p>
       <div className="space-y-3">
         {CHANNELS.map((c) => {
