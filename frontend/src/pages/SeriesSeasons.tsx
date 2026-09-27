@@ -355,15 +355,21 @@ export default function SeriesSeasons() {
         <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
       ) : series ? (
         <>
-          {/* Header: fanart banner + title/metadata overlay */}
-          <div className="relative rounded-xl overflow-hidden border border-slate-800 mb-4">
-            {series.fanart_url ? (
-              <img src={series.fanart_url} alt="" className="w-full h-40 sm:h-56 object-cover" />
-            ) : (
-              <div className="w-full h-24 bg-slate-925" />
+          {/* Header: fanart banner + title/metadata overlay. The art sits
+              behind the content rather than fixing the banner's height, so
+              on a phone the banner grows to fit wrapped pills and actions
+              instead of clipping the title off the top. */}
+          <div className="relative rounded-xl overflow-hidden border border-slate-800 mb-4 bg-slate-925">
+            {series.fanart_url && (
+              <img src={series.fanart_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5 flex items-end justify-between gap-4">
+            <div
+              className={clsx(
+                'relative p-4 sm:p-5 flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4',
+                series.fanart_url ? 'pt-24 sm:pt-36' : 'pt-10',
+              )}
+            >
               <div className="min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
                   {series.fanart_url && (

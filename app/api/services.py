@@ -15,21 +15,30 @@ from app import audit
 from app.crypto import decrypt_str, encrypt_str
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
-from app.services import sonarr_client
+from app.services import arr_http, radarr_client, sonarr_client
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
 
 _VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd"}
-_IMPLEMENTED_TYPES = {"sonarr"}  # only type with a real client behind it so far
 _MASK = "••••••••"
 
 # Extension point for future services (scope: "build Sonarr fully, use it as
-# the model"): a new type is implemented by adding a client module with the
-# same get_queue/get_wanted_missing/get_calendar/get_series/get_history
-# function names and one entry here — the route and dispatch below don't change.
-_DETAIL_CLIENTS = {"sonarr": sonarr_client}
-_DETAIL_VIEWS = {"queue", "wanted", "series", "history"}  # calendar has its own route — it takes start/end
+# the model"): a new type is implemented by adding a client module and one
+# entry here. Each client implements the views its media model has — a
+# view (or route) the client has no function for answers 404/400 rather
+# than a 500, so e.g. Radarr has no "series" and Sonarr has no "movies".
+_DETAIL_CLIENTS = {"sonarr": sonarr_client, "radarr": radarr_client}
+_IMPLEMENTED_TYPES = set(_DETAIL_CLIENTS)
+
+# view name -> client function name. Calendar has its own route (start/end).
+_DETAIL_VIEWS = {
+    "queue": "get_queue",
+    "wanted": "get_wanted_missing",
+    "series": "get_series",
+    "movies": "get_movies",
+    "history": "get_history",
+}
 
 
 class ServiceCreate(BaseModel):
@@ -104,6 +113,15 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'{body.type}' isn't built yet — only {sorted(_IMPLEMENTED_TYPES)} for now",
         )
+    # Refuse a definite type mismatch (e.g. a Radarr URL saved as Sonarr).
+    # An unreachable service still saves — it may just be down right now.
+    if body.api_key:
+        actual = await arr_http.detect_app(body.base_url, body.api_key)
+        if actual and actual.lower() != body.type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"That URL is a {actual} instance — set the type to {actual}",
+            )
     api_key_enc = encrypt_str(body.api_key) if body.api_key else ""
     cur = await db.execute(
         "INSERT INTO service_instances "
@@ -167,13 +185,22 @@ class TestConnectionRequest(BaseModel):
     api_key: Optional[str] = None
 
 
+def _client_for_type(service_type: Optional[str]):
+    client = _DETAIL_CLIENTS.get(service_type or "")
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{service_type}' isn't built yet — only {sorted(_DETAIL_CLIENTS)} for now",
+        )
+    return client
+
+
 @router.post("/test-connection")
 async def test_connection_unsaved(body: TestConnectionRequest, admin: AdminUser):
-    if body.type != "sonarr":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only 'sonarr' is implemented so far")
+    client = _client_for_type(body.type)
     if not body.base_url or not body.api_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="base_url and api_key are required")
-    ok, message = await sonarr_client.test_connection(body.base_url, body.api_key)
+    ok, message = await client.test_connection(body.base_url, body.api_key)
     return {"ok": ok, "message": message}
 
 
@@ -183,10 +210,9 @@ async def test_connection_saved(service_id: int, admin: AdminUser, db: aiosqlite
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    if row["type"] != "sonarr":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only 'sonarr' is implemented so far")
+    client = _client_for_type(row["type"])
     api_key = decrypt_str(row["api_key_enc"])
-    ok, message = await sonarr_client.test_connection(row["base_url"], api_key)
+    ok, message = await client.test_connection(row["base_url"], api_key)
     return {"ok": ok, "message": message}
 
 
@@ -218,34 +244,37 @@ async def _get_service_and_client(service_id: int, db: aiosqlite.Connection):
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    client = _DETAIL_CLIENTS.get(row["type"])
-    if not client:
+    return row, _client_for_type(row["type"])
+
+
+def _client_fn(row: aiosqlite.Row, client, name: str):
+    """A client function by name, or a 400 when this service type's media
+    model has no such thing (e.g. seasons on Radarr, movies on Sonarr)."""
+    fn = getattr(client, name, None)
+    if fn is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'{row['type']}' isn't built yet — only {sorted(_DETAIL_CLIENTS)} for now",
+            detail=f"Not supported for '{row['type']}'",
         )
-    return row, client
+    return fn
 
 
 @router.get("/{service_id}/detail/{view}")
 async def service_detail(
     service_id: int, view: str, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Live, read-through detail views (queue/wanted/calendar/series/history)
+    """Live, read-through detail views (queue/wanted/series/movies/history)
     behind the per-service drill-down page. Not cached — see sonarr_client's
     module docstring for why. Dispatches on `service.type` via _DETAIL_CLIENTS
     so a future service type only needs an entry there, not a new route."""
-    if view not in _DETAIL_VIEWS:
+    fn_name = _DETAIL_VIEWS.get(view)
+    if not fn_name:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown view: {view}")
 
     row, client = await _get_service_and_client(service_id, db)
-
-    fn = {
-        "queue": client.get_queue,
-        "wanted": client.get_wanted_missing,
-        "series": client.get_series,
-        "history": client.get_history,
-    }[view]
+    fn = getattr(client, fn_name, None)
+    if fn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No '{view}' view for '{row['type']}'")
 
     api_key = decrypt_str(row["api_key_enc"])
     try:
@@ -263,7 +292,7 @@ async def service_calendar(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        return await client.get_calendar(row["base_url"], api_key, start, end)
+        return await _client_fn(row, client, "get_calendar")(row["base_url"], api_key, start, end)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -283,7 +312,7 @@ async def update_series_monitored(
 
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.set_series_monitored(row["base_url"], api_key, series_id, body.monitored)
+        await _client_fn(row, client, "set_series_monitored")(row["base_url"], api_key, series_id, body.monitored)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -306,7 +335,7 @@ async def update_episode_monitored(
 
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.set_episode_monitored(row["base_url"], api_key, episode_id, body.monitored)
+        await _client_fn(row, client, "set_episode_monitored")(row["base_url"], api_key, episode_id, body.monitored)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -323,7 +352,7 @@ async def series_detail(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        return await client.get_series_detail(row["base_url"], api_key, series_id)
+        return await _client_fn(row, client, "get_series_detail")(row["base_url"], api_key, series_id)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -342,7 +371,7 @@ async def update_season_monitored(
 
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.set_season_monitored(row["base_url"], api_key, series_id, season_number, body.monitored)
+        await _client_fn(row, client, "set_season_monitored")(row["base_url"], api_key, series_id, season_number, body.monitored)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -360,7 +389,7 @@ async def season_episodes(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        return await client.get_season_episodes(row["base_url"], api_key, series_id, season_number)
+        return await _client_fn(row, client, "get_season_episodes")(row["base_url"], api_key, series_id, season_number)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -373,7 +402,7 @@ async def season_history(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        return await client.get_season_history(row["base_url"], api_key, series_id, season_number)
+        return await _client_fn(row, client, "get_season_history")(row["base_url"], api_key, series_id, season_number)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -386,7 +415,7 @@ async def trigger_season_search(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.search_season(row["base_url"], api_key, series_id, season_number)
+        await _client_fn(row, client, "search_season")(row["base_url"], api_key, series_id, season_number)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="season.search", target_type="service_instance",
@@ -403,7 +432,7 @@ async def trigger_episode_search(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.search_episode(row["base_url"], api_key, episode_id)
+        await _client_fn(row, client, "search_episode")(row["base_url"], api_key, episode_id)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="episode.search", target_type="service_instance",
@@ -421,7 +450,7 @@ async def delete_episode_file_route(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.delete_episode_file(row["base_url"], api_key, episode_file_id)
+        await _client_fn(row, client, "delete_episode_file")(row["base_url"], api_key, episode_file_id)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="episode.delete_file", target_type="service_instance",
@@ -439,7 +468,7 @@ async def delete_series_route(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await client.delete_series(row["base_url"], api_key, series_id, delete_files)
+        await _client_fn(row, client, "delete_series")(row["base_url"], api_key, series_id, delete_files)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="series.delete", target_type="service_instance",
@@ -455,7 +484,7 @@ async def series_history(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        return await client.get_series_history(row["base_url"], api_key, series_id)
+        return await _client_fn(row, client, "get_series_history")(row["base_url"], api_key, series_id)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -469,6 +498,113 @@ async def series_calendar(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        return await client.get_series_calendar(row["base_url"], api_key, series_id, start, end)
+        return await _client_fn(row, client, "get_series_calendar")(row["base_url"], api_key, series_id, start, end)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Movies (Radarr) — one item per title, no seasons/episodes. Same auth,
+# audit, and 502-on-upstream-failure shape as the series routes above.
+# ---------------------------------------------------------------------------
+
+class MovieMonitorUpdate(BaseModel):
+    monitored: bool
+
+
+@router.get("/{service_id}/movies/{movie_id}")
+async def movie_detail(
+    service_id: int, movie_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The movie overview page — summary, release dates, and file on disk."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "get_movie_detail")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await fn(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.patch("/{service_id}/movies/{movie_id}/monitored")
+async def update_movie_monitored(
+    service_id: int, movie_id: int, body: MovieMonitorUpdate, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The movie page's and Missing tab's Monitor toggle."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "set_movie_monitored")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, movie_id, body.monitored)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="movie.monitor", target_type="service_instance",
+                        target_id=service_id, detail={"movie_id": movie_id, "monitored": body.monitored})
+    return {"ok": True, "monitored": body.monitored}
+
+
+@router.post("/{service_id}/movies/{movie_id}/search")
+async def trigger_movie_search(
+    service_id: int, movie_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The movie page's and Missing tab's Search action."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "search_movie")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="movie.search", target_type="service_instance",
+                        target_id=service_id, detail={"movie_id": movie_id})
+    return {"ok": True}
+
+
+@router.get("/{service_id}/movies/{movie_id}/history")
+async def movie_history(
+    service_id: int, movie_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The movie page's History button."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "get_movie_history")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await fn(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.delete("/{service_id}/moviefiles/{movie_file_id}")
+async def delete_movie_file_route(
+    service_id: int, movie_file_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The movie page's file trash-can — deletes the file from disk via
+    Radarr; the movie stays in the library and shows as missing again."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "delete_movie_file")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, movie_file_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="movie.delete_file", target_type="service_instance",
+                        target_id=service_id, detail={"movie_file_id": movie_file_id})
+    return {"ok": True}
+
+
+@router.delete("/{service_id}/movies/{movie_id}")
+async def delete_movie_route(
+    service_id: int, movie_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db), delete_files: bool = False,
+):
+    """The movie page's delete button. Like series delete, files on disk
+    are only touched when delete_files is explicitly true."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "delete_movie")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, movie_id, delete_files)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="movie.delete", target_type="service_instance",
+                        target_id=service_id, detail={"movie_id": movie_id, "delete_files": delete_files})
+    return {"ok": True}

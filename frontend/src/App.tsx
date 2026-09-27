@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Services from './pages/Services'
 import ServiceDetail from './pages/ServiceDetail'
 import SeriesSeasons from './pages/SeriesSeasons'
+import MovieDetail from './pages/MovieDetail'
 import SettingsPage from './pages/Settings'
 import Logs from './pages/Logs'
 
@@ -33,6 +34,7 @@ function AppRoutes() {
         <Route path="services" element={<Services />} />
         <Route path="services/:id" element={<ServiceDetail />} />
         <Route path="services/:id/series/:seriesId" element={<SeriesSeasons />} />
+        <Route path="services/:id/movies/:movieId" element={<MovieDetail />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="logs" element={<Logs />} />
       </Route>

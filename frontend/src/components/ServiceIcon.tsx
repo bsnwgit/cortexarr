@@ -1,4 +1,5 @@
 import SonarrIcon from './icons/SonarrIcon'
+import RadarrIcon from './icons/RadarrIcon'
 import GenericServiceIcon from './icons/GenericServiceIcon'
 
 // One entry per service type with its own icon. Adding a new service
@@ -8,6 +9,7 @@ import GenericServiceIcon from './icons/GenericServiceIcon'
 // entry falls back to the generic mark rather than showing nothing.
 const ICONS: Record<string, typeof SonarrIcon> = {
   sonarr: SonarrIcon,
+  radarr: RadarrIcon,
 }
 
 export default function ServiceIcon({ type, className = 'w-5 h-5' }: { type: string; className?: string }) {

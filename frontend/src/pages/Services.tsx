@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import ServiceIcon from '../components/ServiceIcon'
 import StatusPill, { type StatusInfo } from '../components/StatusPill'
+import { getServiceAccent } from '../utils/serviceAccent'
 
 interface Service {
   id: number
@@ -139,14 +140,14 @@ export default function Services() {
             <Field label="Type">
               <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="sonarr">Sonarr</option>
-                <option value="radarr" disabled>Radarr (coming soon)</option>
+                <option value="radarr">Radarr</option>
                 <option value="seerr" disabled>Seerr (coming soon)</option>
                 <option value="nzbget" disabled>NZBGet (coming soon)</option>
                 <option value="sabnzbd" disabled>SABnzbd (coming soon)</option>
               </select>
             </Field>
             <Field label="Base URL">
-              <input className="input" placeholder="http://192.168.1.50:8989" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+              <input className="input" placeholder={`http://192.168.1.50:${form.type === 'radarr' ? 7878 : 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </Field>
             <Field label="API key">
               <input className="input" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
@@ -196,7 +197,10 @@ export default function Services() {
                 <div className="flex items-center gap-2 font-medium text-slate-100">
                   <ServiceIcon type={s.type} className="w-5 h-5 rounded-sm shrink-0" />
                   {s.name}
-                  <StatusPill service={statusById[s.id] ?? { maintenance_mode: s.maintenance_mode, status: null }} />
+                  <StatusPill
+                    service={statusById[s.id] ?? { maintenance_mode: s.maintenance_mode, status: null }}
+                    accent={getServiceAccent(s.type)}
+                  />
                 </div>
                 <div className="text-xs text-slate-500">
                   {s.type} ·{' '}

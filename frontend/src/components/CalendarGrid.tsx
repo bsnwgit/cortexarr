@@ -1,15 +1,17 @@
 import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
+import type { ServiceAccent } from '../utils/serviceAccent'
 
-export interface CalendarEvent {
-  id: number
-  series?: string
-  series_id: number | null
-  season_number: number | null
-  episode: string
-  air_date: string | null
-  has_file: boolean
-  monitored: boolean
+// A service-neutral calendar entry — each caller maps its own API rows
+// (Sonarr episodes, Radarr release dates) into this shape, so the grid
+// itself knows nothing about series, seasons, or movies.
+export interface GridEvent {
+  key: string | number
+  date: string | null
+  label: string
+  tooltip: string
+  hasFile: boolean
+  href: string | null
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -19,16 +21,15 @@ function isSameDay(a: Date, b: Date) {
 }
 
 // The actual grid: a month at a time, one cell per day, events plotted on
-// their air date rather than listed as rows. Shared by the Calendar tab
-// (all series for a service) and the series header's Calendar modal (one
-// series) — `showSeries` controls whether each event line names its show.
+// their date rather than listed as rows. Shared by every Calendar tab and
+// the series header's Calendar modal. Entries and "today" use the
+// service's own accent.
 export default function CalendarGrid({
-  month, events, showSeries = false, serviceId, onNavigate,
+  month, events, accent, onNavigate,
 }: {
   month: Date
-  events: CalendarEvent[]
-  showSeries?: boolean
-  serviceId: string
+  events: GridEvent[]
+  accent: ServiceAccent
   onNavigate?: () => void
 }) {
   const navigate = useNavigate()
@@ -44,15 +45,21 @@ export default function CalendarGrid({
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, monthIndex, d))
   while (cells.length % 7 !== 0) cells.push(null)
 
-  const byDay = new Map<string, CalendarEvent[]>()
+  const byDay = new Map<string, GridEvent[]>()
   for (const ev of events) {
-    if (!ev.air_date) continue
-    const d = new Date(ev.air_date)
+    if (!ev.date) continue
+    const d = new Date(ev.date)
     if (Number.isNaN(d.getTime())) continue
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
     const list = byDay.get(key) ?? []
     list.push(ev)
     byDay.set(key, list)
+  }
+
+  function open(ev: GridEvent) {
+    if (!ev.href) return
+    onNavigate?.()
+    navigate(ev.href)
   }
 
   return (
@@ -73,38 +80,31 @@ export default function CalendarGrid({
               key={i}
               className={clsx(
                 'min-h-[80px] rounded-lg border p-1.5 flex flex-col gap-1',
-                isToday ? 'border-violet-600/50 bg-violet-600/5' : 'border-slate-800 bg-slate-950',
+                isToday ? clsx(accent.border, 'bg-slate-900') : 'border-slate-800 bg-slate-950',
               )}
             >
-              <span className={clsx('text-xs', isToday ? 'text-violet-300 font-semibold' : 'text-slate-500')}>
+              <span className={clsx('text-xs', isToday ? clsx(accent.text, 'font-semibold') : 'text-slate-500')}>
                 {date.getDate()}
               </span>
               <div className="flex flex-col gap-0.5 overflow-hidden">
                 {dayEvents.map((ev) => (
                   <span
-                    key={ev.id}
-                    role={ev.series_id != null ? 'link' : undefined}
-                    tabIndex={ev.series_id != null ? 0 : undefined}
-                    title={showSeries ? `${ev.series} — ${ev.episode}` : ev.episode}
-                    onClick={() => {
-                      if (ev.series_id == null) return
-                      const seasonQuery = ev.season_number != null ? `?season=${ev.season_number}` : ''
-                      onNavigate?.()
-                      navigate(`/services/${serviceId}/series/${ev.series_id}${seasonQuery}`)
-                    }}
+                    key={ev.key}
+                    role={ev.href ? 'link' : undefined}
+                    tabIndex={ev.href ? 0 : undefined}
+                    title={ev.tooltip}
+                    onClick={() => open(ev)}
                     onKeyDown={(e) => {
-                      if (e.key !== 'Enter' || ev.series_id == null) return
-                      const seasonQuery = ev.season_number != null ? `?season=${ev.season_number}` : ''
-                      onNavigate?.()
-                      navigate(`/services/${serviceId}/series/${ev.series_id}${seasonQuery}`)
+                      if (e.key === 'Enter') open(ev)
                     }}
                     className={clsx(
                       'text-[11px] leading-tight px-1 py-0.5 rounded truncate',
-                      ev.has_file ? 'bg-teal-500/15 text-teal-300' : 'bg-amber-500/15 text-amber-300',
-                      ev.series_id != null && 'cursor-pointer hover:underline',
+                      accent.bg,
+                      accent.text,
+                      ev.href && 'cursor-pointer hover:underline',
                     )}
                   >
-                    {showSeries ? ev.series : ev.episode}
+                    {ev.label}
                   </span>
                 ))}
               </div>

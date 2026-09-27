@@ -18,20 +18,18 @@ Thin client for Sonarr's v3 API.
     `PATCH /api/services/{id}/series/{series_id}/monitored`. Everything
     else in this module only reads Sonarr.
 
-Both calls use the same X-Api-Key header auth Sonarr expects everywhere.
-
-This module is the pattern for future per-service clients (Radarr's v3 API
-is nearly identical): same function names, same (base_url, api_key) shape,
-same ConnectivityError contract, dispatched by `service.type` in
+Transport, auth, error mapping, and the status/health probes are shared with
+radarr_client.py via app/services/arr_http.py — this module is only the
+Sonarr-shaped parsing on top of it, dispatched by `service.type` in
 app/api/services.py's `_DETAIL_CLIENTS`.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
-import httpx
-
+from app.services import arr_http
+from app.services.arr_http import HealthResult
 from app.services.errors import ConnectivityError, ServiceApiError
 
 __all__ = [
@@ -46,151 +44,15 @@ __all__ = [
 ]
 
 
-@dataclass
-class HealthResult:
-    connectivity_ok: bool
-    status: str  # 'ok' | 'warning' | 'error' | 'unreachable'
-    issues: list[dict[str, Any]] = field(default_factory=list)
-    detail: str = ""
+_APP = "Sonarr"
 
-
-def _base(base_url: str) -> str:
-    return base_url.rstrip("/")
-
-
-async def test_connection(base_url: str, api_key: str, timeout: float = 10.0) -> tuple[bool, str]:
-    """Returns (ok, message). Used by the "test connection" UI action."""
-    url = f"{_base(base_url)}/api/v3/system/status"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url, headers={"X-Api-Key": api_key})
-        if resp.status_code == 401:
-            return False, "Rejected — check the API key"
-        if resp.status_code == 404:
-            return False, "Got a response, but not from Sonarr's API — check the URL"
-        resp.raise_for_status()
-        data = resp.json()
-        version = data.get("version", "unknown")
-        return True, f"Connected — Sonarr {version}"
-    except httpx.TimeoutException:
-        return False, f"Timed out after {timeout:.0f}s"
-    except httpx.ConnectError as exc:
-        return False, f"Could not connect: {exc}"
-    except httpx.HTTPStatusError as exc:
-        return False, f"HTTP {exc.response.status_code}"
-    except Exception as exc:  # noqa: BLE001 - surfaced to the admin as a message, not raised
-        return False, f"Unexpected error: {exc}"
-
-
-async def check_health(base_url: str, api_key: str, timeout: float = 10.0) -> HealthResult:
-    """Fetch Sonarr's own health-issue list. Raises ConnectivityError if
-    Sonarr itself can't be reached or the key is bad — the caller (the
-    poller) records that as connectivity_ok=False, not status='error'."""
-    url = f"{_base(base_url)}/api/v3/health"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url, headers={"X-Api-Key": api_key})
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        raise ConnectivityError(str(exc)) from exc
-
-    if resp.status_code == 401:
-        raise ConnectivityError("API key rejected")
-    if resp.status_code >= 500:
-        raise ConnectivityError(f"Sonarr returned HTTP {resp.status_code}")
-    resp.raise_for_status()
-
-    issues = resp.json()
-    if not isinstance(issues, list):
-        issues = []
-
-    if not issues:
-        return HealthResult(connectivity_ok=True, status="ok")
-
-    severities = {issue.get("type", "warning") for issue in issues}
-    status = "error" if "error" in severities else "warning"
-    summary = "; ".join(issue.get("message", "") for issue in issues[:5])
-    return HealthResult(connectivity_ok=True, status=status, issues=issues, detail=summary)
-
-
-async def _get(base_url: str, api_key: str, path: str, params: dict[str, Any] | None = None, timeout: float = 15.0) -> Any:
-    url = f"{_base(base_url)}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url, headers={"X-Api-Key": api_key}, params=params)
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        raise ConnectivityError(str(exc)) from exc
-    if resp.status_code == 401:
-        raise ConnectivityError("API key rejected")
-    if resp.status_code >= 500:
-        raise ConnectivityError(f"Sonarr returned HTTP {resp.status_code}")
-    try:
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise ServiceApiError(f"HTTP {exc.response.status_code} from {path}") from exc
-    return resp.json()
-
-
-async def _put(base_url: str, api_key: str, path: str, body: dict[str, Any], timeout: float = 15.0) -> Any:
-    url = f"{_base(base_url)}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.put(url, headers={"X-Api-Key": api_key}, json=body)
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        raise ConnectivityError(str(exc)) from exc
-    if resp.status_code == 401:
-        raise ConnectivityError("API key rejected")
-    if resp.status_code >= 500:
-        raise ConnectivityError(f"Sonarr returned HTTP {resp.status_code}")
-    try:
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise ServiceApiError(f"HTTP {exc.response.status_code} from {path}") from exc
-    return resp.json()
-
-
-async def _post(base_url: str, api_key: str, path: str, body: dict[str, Any], timeout: float = 15.0) -> Any:
-    url = f"{_base(base_url)}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, headers={"X-Api-Key": api_key}, json=body)
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        raise ConnectivityError(str(exc)) from exc
-    if resp.status_code == 401:
-        raise ConnectivityError("API key rejected")
-    if resp.status_code >= 500:
-        raise ConnectivityError(f"Sonarr returned HTTP {resp.status_code}")
-    try:
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise ServiceApiError(f"HTTP {exc.response.status_code} from {path}") from exc
-    return resp.json() if resp.content else None
-
-
-async def _delete(base_url: str, api_key: str, path: str, params: dict[str, Any] | None = None, timeout: float = 15.0) -> None:
-    url = f"{_base(base_url)}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.delete(url, headers={"X-Api-Key": api_key}, params=params)
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        raise ConnectivityError(str(exc)) from exc
-    if resp.status_code == 401:
-        raise ConnectivityError("API key rejected")
-    if resp.status_code >= 500:
-        raise ConnectivityError(f"Sonarr returned HTTP {resp.status_code}")
-    try:
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise ServiceApiError(f"HTTP {exc.response.status_code} from {path}") from exc
-
-
-def _cover_url(images: list[dict[str, Any]] | None, cover_type: str) -> str:
-    """Prefer remoteUrl (a public CDN — thetvdb/fanart.tv — the frontend can
-    load directly) over Sonarr's own `url`, which is a path on Sonarr itself
-    and would need a proxied, authenticated request to load."""
-    for img in images or []:
-        if img.get("coverType") == cover_type and img.get("remoteUrl"):
-            return img["remoteUrl"]
-    return ""
+test_connection = partial(arr_http.test_connection, _APP)
+check_health = partial(arr_http.check_health, _APP)
+_get = partial(arr_http.get, _APP)
+_put = partial(arr_http.put, _APP)
+_post = partial(arr_http.post, _APP)
+_delete = partial(arr_http.delete, _APP)
+_cover_url = arr_http.cover_url
 
 
 def _year_range(r: dict[str, Any]) -> str:

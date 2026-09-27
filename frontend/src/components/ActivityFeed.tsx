@@ -13,11 +13,15 @@ interface Service {
   maintenance_mode: boolean
 }
 
+// The union of Sonarr's (series/episode) and Radarr's (movie/year) history
+// rows — each type only fills its own half.
 interface HistoryItem {
   id: number
   event_type: string
-  series: string
-  episode: string
+  series?: string
+  episode?: string
+  movie?: string
+  year?: number | null
   source_title: string | null
   quality: string
   date: string | null
@@ -27,11 +31,28 @@ interface ActivityRow extends HistoryItem {
   service_id: number
   service_name: string
   service_type: string
+  title: string
 }
 
 // Services already known to have a real client behind `/detail/history` —
 // keep in sync with app/api/services.py's _DETAIL_CLIENTS as new types land.
-const HISTORY_CAPABLE_TYPES = new Set(['sonarr'])
+const HISTORY_CAPABLE_TYPES = new Set(['sonarr', 'radarr'])
+
+// The category filter's pipelines, by service type — including the planned
+// ones, so each option appears on its own once a service of that type is
+// configured, with no change needed here.
+const CATEGORIES: { key: string; label: string; types: string[] }[] = [
+  { key: 'series', label: 'Series (Sonarr)', types: ['sonarr'] },
+  { key: 'movies', label: 'Movies (Radarr)', types: ['radarr'] },
+  { key: 'requests', label: 'Requests (Seerr)', types: ['seerr'] },
+  { key: 'downloads', label: 'Downloads (NZBGet / SABnzbd)', types: ['nzbget', 'sabnzbd'] },
+]
+
+// What the row is about, in one line, whatever the service type.
+function rowTitle(r: HistoryItem): string {
+  if (r.movie !== undefined) return r.year ? `${r.movie} (${r.year})` : r.movie
+  return `${r.series ?? ''} — ${r.episode ?? ''}`
+}
 
 function fmtDate(v: string | null) {
   if (!v) return '—'
@@ -56,7 +77,7 @@ const ACTIVITY_COLUMNS: Column<ActivityRow>[] = [
     },
   },
   { key: 'event_type', label: 'Event', className: 'capitalize' },
-  { key: 'series', label: 'Series / episode', render: (r) => `${r.series} — ${r.episode}` },
+  { key: 'title', label: 'Title' },
   { key: 'quality', label: 'Quality', render: (r) => r.quality || '—' },
 ]
 
@@ -66,6 +87,8 @@ const ACTIVITY_COLUMNS: Column<ActivityRow>[] = [
 export default function ActivityFeed({ limit = 50 }: { limit?: number }) {
   const [activity, setActivity] = useState<ActivityRow[]>([])
   const [hasServices, setHasServices] = useState<boolean | null>(null)
+  const [configuredTypes, setConfiguredTypes] = useState<Set<string>>(new Set())
+  const [category, setCategory] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -74,13 +97,20 @@ export default function ActivityFeed({ limit = 50 }: { limit?: number }) {
     try {
       const services = await api.get<Service[]>('/services/')
       setHasServices(services.length > 0)
+      setConfiguredTypes(new Set(services.map((s) => s.type)))
 
       const capable = services.filter((s) => HISTORY_CAPABLE_TYPES.has(s.type))
       const results = await Promise.all(
         capable.map(async (s) => {
           try {
             const rows = await api.get<HistoryItem[]>(`/services/${s.id}/detail/history`)
-            return rows.map((r) => ({ ...r, service_id: s.id, service_name: s.name, service_type: s.type }))
+            return rows.map((r) => ({
+              ...r,
+              service_id: s.id,
+              service_name: s.name,
+              service_type: s.type,
+              title: rowTitle(r),
+            }))
           } catch {
             return [] // one unreachable service shouldn't blank the whole feed
           }
@@ -116,12 +146,28 @@ export default function ActivityFeed({ limit = 50 }: { limit?: number }) {
   }
   if (activity.length === 0) return <p className="text-slate-500 text-sm">No recent activity yet.</p>
 
+  const available = CATEGORIES.filter((c) => c.types.some((t) => configuredTypes.has(t)))
+  const selected = available.find((c) => c.key === category)
+  const rows = selected ? activity.filter((r) => selected.types.includes(r.service_type)) : activity
+
   return (
     <DataTable
       columns={ACTIVITY_COLUMNS}
-      rows={activity}
+      rows={rows}
       rowKey={(r) => `${r.service_id}-${r.id}`}
-      emptyMessage="No recent activity yet."
+      emptyMessage={selected ? `No recent ${selected.key} activity.` : 'No recent activity yet.'}
+      toolbar={
+        <select
+          value={selected ? category : 'all'}
+          onChange={(e) => setCategory(e.target.value)}
+          className="rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm text-slate-100"
+        >
+          <option value="all">All activity</option>
+          {available.map((c) => (
+            <option key={c.key} value={c.key}>{c.label}</option>
+          ))}
+        </select>
+      }
     />
   )
 }

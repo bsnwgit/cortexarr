@@ -48,7 +48,7 @@ function fmtDate(v: string | null) {
 // stage (downloading/importPending/failed/...), which is what actually
 // explains a queue item sitting at 100% progress with nothing happening —
 // progress alone only reflects the download, not the import step after it.
-function fmtState(s: string | null): string {
+export function fmtState(s: string | null): string {
   if (!s) return ''
   const spaced = s.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
@@ -85,14 +85,52 @@ const HISTORY_COLUMNS: Column<HistoryItem>[] = [
   { key: 'quality', label: 'Quality', render: (r) => r.quality || '—' },
 ]
 
+interface RadarrQueueItem extends Omit<QueueItem, 'series' | 'episode'> {
+  movie: string
+  year: number | null
+}
+
+interface RadarrHistoryItem extends Omit<HistoryItem, 'series' | 'episode'> {
+  movie: string
+  year: number | null
+}
+
+const movieTitle = (r: { movie: string; year: number | null }) => (r.year ? `${r.movie} (${r.year})` : r.movie)
+
+const RADARR_QUEUE_COLUMNS: Column<RadarrQueueItem>[] = [
+  { key: 'movie', label: 'Movie', render: movieTitle },
+  ...(QUEUE_COLUMNS.slice(2) as unknown as Column<RadarrQueueItem>[]),
+]
+
+const RADARR_HISTORY_COLUMNS: Column<RadarrHistoryItem>[] = [
+  { key: 'date', label: 'Date', render: (r) => fmtDate(r.date) },
+  { key: 'event_type', label: 'Event', render: (r) => fmtState(r.event_type) },
+  { key: 'movie', label: 'Movie', render: movieTitle },
+  { key: 'quality', label: 'Quality', render: (r) => r.quality || '—' },
+  { key: 'source_title', label: 'Release', render: (r) => r.source_title || '—' },
+]
+
+type Row = { id: number }
+const cols = <T,>(c: Column<T>[]) => c as unknown as Column<Row>[]
+
+// Per service type: its columns, and which URL param the dashboard card
+// uses to pre-scope the filter (and to which column).
+const PANEL_CONFIG: Record<string, { queue: Column<Row>[]; history: Column<Row>[]; filterParam: string }> = {
+  sonarr: { queue: cols(QUEUE_COLUMNS), history: cols(HISTORY_COLUMNS), filterParam: 'series' },
+  radarr: { queue: cols(RADARR_QUEUE_COLUMNS), history: cols(RADARR_HISTORY_COLUMNS), filterParam: 'movie' },
+}
+
 // Queue/History — what's actively moving through the pipeline, as distinct
-// from Series (the library), Missing, and Calendar (their own tabs now).
-// Queue is always the sub-tab shown on first arriving here.
-export default function DownloadingPanel({ serviceId, accent }: { serviceId: string; accent: ServiceAccent }) {
+// from the library, Missing, and Calendar (their own tabs). Queue is always
+// the sub-tab shown on first arriving here.
+export default function DownloadingPanel({
+  serviceId, serviceType, accent,
+}: { serviceId: string; serviceType: string; accent: ServiceAccent }) {
   const [searchParams] = useSearchParams()
-  // Arriving from the dashboard's per-series "in queue" pill scopes the
-  // filter to that series instead of showing everything for the service.
-  const seriesFilter = searchParams.get('series') ?? ''
+  const config = PANEL_CONFIG[serviceType] ?? PANEL_CONFIG.sonarr
+  // Arriving from a dashboard card's per-item pill scopes the filter to
+  // that series/movie instead of showing everything for the service.
+  const itemFilter = searchParams.get(config.filterParam) ?? ''
   const [subTab, setSubTab] = useState<SubTabKey>('queue')
   const [rows, setRows] = useState<unknown[]>([])
   const [loading, setLoading] = useState(true)
@@ -150,25 +188,15 @@ export default function DownloadingPanel({ serviceId, accent }: { serviceId: str
           <p className="text-red-300 text-sm py-6 text-center">{error}</p>
         ) : loading && rows.length === 0 ? (
           <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
-        ) : subTab === 'queue' ? (
-          <DataTable
-            key={subTab}
-            columns={QUEUE_COLUMNS}
-            rows={rows as QueueItem[]}
-            rowKey={(r) => r.id}
-            emptyMessage="Nothing in the queue."
-            initialQuery={seriesFilter}
-            initialFilterScope={seriesFilter ? ['series'] : []}
-          />
         ) : (
           <DataTable
             key={subTab}
-            columns={HISTORY_COLUMNS}
-            rows={rows as HistoryItem[]}
+            columns={subTab === 'queue' ? config.queue : config.history}
+            rows={rows as Row[]}
             rowKey={(r) => r.id}
-            emptyMessage="No history yet."
-            initialQuery={seriesFilter}
-            initialFilterScope={seriesFilter ? ['series'] : []}
+            emptyMessage={subTab === 'queue' ? 'Nothing in the queue.' : 'No history yet.'}
+            initialQuery={itemFilter}
+            initialFilterScope={itemFilter ? [config.filterParam] : []}
           />
         )}
       </div>

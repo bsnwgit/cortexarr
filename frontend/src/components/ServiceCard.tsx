@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import ServiceIcon from './ServiceIcon'
 import StatusPill, { type StatusInfo } from './StatusPill'
 import SonarrDashboardCard from './SonarrDashboardCard'
+import RadarrDashboardCard from './RadarrDashboardCard'
 import { getServiceAccent } from '../utils/serviceAccent'
 
 export interface DashboardService extends StatusInfo {
@@ -28,7 +29,7 @@ function PlainServiceCard({ service }: { service: DashboardService }) {
           <ServiceIcon type={service.type} className="w-5 h-5 rounded-sm shrink-0" />
           {service.name}
         </span>
-        <StatusPill service={service} />
+        <StatusPill service={service} accent={accent} />
       </div>
       <div className={clsx('text-xs capitalize', accent.text)}>{service.type}</div>
     </Link>
@@ -37,6 +38,7 @@ function PlainServiceCard({ service }: { service: DashboardService }) {
 
 const RICH_CARDS: Record<string, (props: { service: DashboardService }) => ReactNode> = {
   sonarr: SonarrDashboardCard,
+  radarr: RadarrDashboardCard,
 }
 
 export default function ServiceCard({ service }: { service: DashboardService }) {
