@@ -14,8 +14,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   async function load() {
-    const data = await api.get<{ overall: string; services: DashboardService[] }>('/status/')
-    setServices(data.services)
+    // /status/ is public and deliberately has no URLs; the signed-in
+    // service list supplies each card's link to the app itself.
+    const [data, list] = await Promise.all([
+      api.get<{ overall: string; services: DashboardService[] }>('/status/'),
+      api.get<{ id: number; base_url: string }[]>('/services/').catch(() => []),
+    ])
+    const urls = new Map(list.map((s) => [s.id, s.base_url]))
+    setServices(data.services.map((s) => ({ ...s, base_url: urls.get(s.id) })))
     setLoading(false)
   }
 

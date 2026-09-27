@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { api } from '../api/client'
 import ServiceIcon from './ServiceIcon'
+import OpenServiceLink from './OpenServiceLink'
+import RefreshButton, { useRefresh } from './RefreshButton'
 import StatusPill, { type StatusInfo } from './StatusPill'
 import { fmtState } from './DownloadingPanel'
 import { getServiceAccent } from '../utils/serviceAccent'
@@ -33,6 +35,7 @@ interface DashboardService extends StatusInfo {
   id: number
   name: string
   type: string
+  base_url?: string
 }
 
 // One nested card per movie that needs attention, in this order.
@@ -59,6 +62,7 @@ export default function RadarrDashboardCard({ service }: { service: DashboardSer
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [missing, setMissing] = useState<MissingItem[]>([])
   const [loaded, setLoaded] = useState(false)
+  const { tick, refreshing, refresh, done } = useRefresh()
 
   useEffect(() => {
     let cancelled = false
@@ -78,7 +82,10 @@ export default function RadarrDashboardCard({ service }: { service: DashboardSer
           setMissing([])
         }
       } finally {
-        if (!cancelled) setLoaded(true)
+        if (!cancelled) {
+          setLoaded(true)
+          done()
+        }
       }
     }
     load()
@@ -87,7 +94,7 @@ export default function RadarrDashboardCard({ service }: { service: DashboardSer
       cancelled = true
       clearInterval(interval)
     }
-  }, [service.id])
+  }, [service.id, tick, done])
 
   // Every link inside the card stops propagation so it doesn't also fire
   // the whole card's "go to the service" click.
@@ -169,7 +176,11 @@ export default function RadarrDashboardCard({ service }: { service: DashboardSer
             <ServiceIcon type={service.type} className="w-5 h-5 rounded-sm shrink-0" />
             {service.name}
           </span>
+          <span className="flex items-center gap-1.5">
+          <RefreshButton onRefresh={refresh} refreshing={refreshing} label={`Refresh ${service.name}`} />
+          <OpenServiceLink url={service.base_url} name={service.name} />
           <StatusPill service={service} accent={accent} />
+        </span>
         </div>
       </div>
 

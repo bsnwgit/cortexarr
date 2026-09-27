@@ -121,7 +121,7 @@ async def get_queue(base_url: str, api_key: str, page_size: int = 50) -> list[di
     return out
 
 
-async def get_wanted_missing(base_url: str, api_key: str, page_size: int = 50) -> list[dict[str, Any]]:
+async def get_wanted_missing(base_url: str, api_key: str, page_size: int = 1000) -> list[dict[str, Any]]:
     """Monitored episodes Sonarr doesn't have a file for yet."""
     data = await _get(
         base_url, api_key, "/api/v3/wanted/missing",

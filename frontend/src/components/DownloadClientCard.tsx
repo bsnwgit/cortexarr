@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { api } from '../api/client'
 import ServiceIcon from './ServiceIcon'
+import OpenServiceLink from './OpenServiceLink'
+import RefreshButton, { useRefresh } from './RefreshButton'
 import StatusPill, { type StatusInfo } from './StatusPill'
 import type { DownloadOverviewData } from './DownloadOverview'
 import { getServiceAccent } from '../utils/serviceAccent'
@@ -30,6 +32,7 @@ interface DashboardService extends StatusInfo {
   id: number
   name: string
   type: string
+  base_url?: string
 }
 
 const MAX_CARDS = 4
@@ -45,6 +48,7 @@ export default function DownloadClientCard({ service }: { service: DashboardServ
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [failures, setFailures] = useState<HistoryItem[]>([])
   const [loaded, setLoaded] = useState(false)
+  const { tick, refreshing, refresh, done } = useRefresh()
 
   useEffect(() => {
     let cancelled = false
@@ -68,7 +72,10 @@ export default function DownloadClientCard({ service }: { service: DashboardServ
           setFailures([])
         }
       } finally {
-        if (!cancelled) setLoaded(true)
+        if (!cancelled) {
+          setLoaded(true)
+          done()
+        }
       }
     }
     load()
@@ -77,7 +84,7 @@ export default function DownloadClientCard({ service }: { service: DashboardServ
       cancelled = true
       clearInterval(interval)
     }
-  }, [service.id])
+  }, [service.id, tick, done])
 
   function linkProps(to: string) {
     const go = (e: MouseEvent | KeyboardEvent) => {
@@ -114,7 +121,11 @@ export default function DownloadClientCard({ service }: { service: DashboardServ
           <ServiceIcon type={service.type} className="w-5 h-5 rounded-sm shrink-0" />
           {service.name}
         </span>
-        <StatusPill service={service} accent={accent} />
+        <span className="flex items-center gap-1.5">
+          <RefreshButton onRefresh={refresh} refreshing={refreshing} label={`Refresh ${service.name}`} />
+          <OpenServiceLink url={service.base_url} name={service.name} />
+          <StatusPill service={service} accent={accent} />
+        </span>
       </div>
 
       {overview && (

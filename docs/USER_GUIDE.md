@@ -12,16 +12,16 @@ password**, and **Log out**. Admins also see **Add service** there (see the
 
 **Seerr** runs full width across the top: a strip of recent request
 posters, with anything failed, waiting for approval, or processing first.
-The counts on the right (pending approval, processing, failed, issues) each
+The counts across the middle (pending approval, processing, failed, issues) each
 open that list.
 
 Below it, each service has a card with its health and what needs attention
 right now:
 
-- **Sonarr** — a card per episode downloading or stuck, with that series'
-  queue and missing counts. Click a card to open the series; the pills open
-  the queue (filtered to that series) or the series at its first missing
-  season.
+- **Sonarr** — a card per episode that's stuck or downloading, then a card
+  per series with missing episodes. Click a card to open the series; the
+  pills open the queue (filtered to that series) or the series at its first
+  missing season.
 - **Radarr** — a card per movie that's stuck, downloading, or missing.
   Click a card to open the movie; the pills open the queue (filtered to
   that movie) or the missing list.
@@ -39,9 +39,14 @@ Every service shows one of:
   rejected. Check the URL and key rather than the service's own health.
 - **Maintenance** — checks are paused; excluded from the overall status.
 
-Click anywhere else on a card to open that service's page.
+Beside the status, the refresh icon reloads just that card now rather than
+waiting for its next update, and the arrow icon opens the service's own web
+UI in a new tab. Click anywhere else on a card to open that service's page.
 
 ## Service pages
+
+The refresh icon at the right of a service page's header reloads that page
+— the overview strip and the tab you're on.
 
 Tables can be searched, sorted by clicking a column header, and paged;
 the series and movie libraries can be searched, filtered, and paged.

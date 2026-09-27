@@ -9,6 +9,8 @@ export interface ServiceAccent {
   bg: string
   border: string
   hoverBorder: string
+  // Gradient stops for the tinted header band on the service's own page.
+  band: string
 }
 
 const DEFAULT_ACCENT: ServiceAccent = {
@@ -16,6 +18,7 @@ const DEFAULT_ACCENT: ServiceAccent = {
   bg: 'bg-violet-600/20',
   border: 'border-violet-600/40',
   hoverBorder: 'hover:border-violet-600/40',
+  band: 'from-violet-600/25 via-violet-600/10 to-transparent',
 }
 
 const ACCENTS: Record<string, ServiceAccent> = {
@@ -24,6 +27,7 @@ const ACCENTS: Record<string, ServiceAccent> = {
     bg: 'bg-teal-600/20',
     border: 'border-teal-600/40',
     hoverBorder: 'hover:border-teal-600/40',
+    band: 'from-teal-600/25 via-teal-600/10 to-transparent',
   },
   // Radarr's gold (#FFC230, the wedge in its own mark).
   radarr: {
@@ -31,6 +35,7 @@ const ACCENTS: Record<string, ServiceAccent> = {
     bg: 'bg-yellow-500/15',
     border: 'border-yellow-500/40',
     hoverBorder: 'hover:border-yellow-500/40',
+    band: 'from-yellow-500/25 via-yellow-500/10 to-transparent',
   },
   // Seerr's indigo (#4F65F5, the deep end of its purple-to-indigo mark).
   seerr: {
@@ -38,6 +43,7 @@ const ACCENTS: Record<string, ServiceAccent> = {
     bg: 'bg-indigo-500/15',
     border: 'border-indigo-500/40',
     hoverBorder: 'hover:border-indigo-500/40',
+    band: 'from-indigo-500/25 via-indigo-500/10 to-transparent',
   },
   // NZBGet's green (#2eb12b, the ring of its own mark).
   nzbget: {
@@ -45,6 +51,7 @@ const ACCENTS: Record<string, ServiceAccent> = {
     bg: 'bg-emerald-500/15',
     border: 'border-emerald-500/40',
     hoverBorder: 'hover:border-emerald-500/40',
+    band: 'from-emerald-500/25 via-emerald-500/10 to-transparent',
   },
   // SABnzbd's orange (#FFB300, its arrow mark) — orange rather than
   // yellow/amber, which are Radarr's gold and the warning color.
@@ -53,6 +60,7 @@ const ACCENTS: Record<string, ServiceAccent> = {
     bg: 'bg-orange-500/15',
     border: 'border-orange-500/40',
     hoverBorder: 'hover:border-orange-500/40',
+    band: 'from-orange-500/25 via-orange-500/10 to-transparent',
   },
 }
 
