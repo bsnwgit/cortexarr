@@ -39,6 +39,21 @@ const ACCENTS: Record<string, ServiceAccent> = {
     border: 'border-indigo-500/40',
     hoverBorder: 'hover:border-indigo-500/40',
   },
+  // NZBGet's green (#2eb12b, the ring of its own mark).
+  nzbget: {
+    text: 'text-emerald-300',
+    bg: 'bg-emerald-500/15',
+    border: 'border-emerald-500/40',
+    hoverBorder: 'hover:border-emerald-500/40',
+  },
+  // SABnzbd's orange (#FFB300, its arrow mark) — orange rather than
+  // yellow/amber, which are Radarr's gold and the warning color.
+  sabnzbd: {
+    text: 'text-orange-300',
+    bg: 'bg-orange-500/15',
+    border: 'border-orange-500/40',
+    hoverBorder: 'hover:border-orange-500/40',
+  },
 }
 
 export function getServiceAccent(type: string): ServiceAccent {

@@ -1,6 +1,8 @@
 import SonarrIcon from './icons/SonarrIcon'
 import RadarrIcon from './icons/RadarrIcon'
 import SeerrIcon from './icons/SeerrIcon'
+import NzbgetIcon from './icons/NzbgetIcon'
+import SabnzbdIcon from './icons/SabnzbdIcon'
 import GenericServiceIcon from './icons/GenericServiceIcon'
 
 // One entry per service type with its own icon. Adding a new service
@@ -12,6 +14,8 @@ const ICONS: Record<string, typeof SonarrIcon> = {
   sonarr: SonarrIcon,
   radarr: RadarrIcon,
   seerr: SeerrIcon,
+  nzbget: NzbgetIcon,
+  sabnzbd: SabnzbdIcon,
 }
 
 export default function ServiceIcon({ type, className = 'w-5 h-5' }: { type: string; className?: string }) {

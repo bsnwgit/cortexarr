@@ -70,6 +70,17 @@ export default function UserMenu() {
               <div className="px-2 py-1 text-xs text-slate-500">
                 Signed in as <span className="text-slate-300">{user?.username}</span> ({user?.role})
               </div>
+              {user?.role === 'admin' && (
+                <button
+                  onClick={() => {
+                    setOpen(false)
+                    navigate('/services?add=1')
+                  }}
+                  className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
+                >
+                  Add service
+                </button>
+              )}
               <button
                 onClick={() => {
                   setOpen(false)

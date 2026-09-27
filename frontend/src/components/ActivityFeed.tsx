@@ -37,7 +37,7 @@ interface ActivityRow extends HistoryItem {
 
 // Services already known to have a real client behind `/detail/history` —
 // keep in sync with app/api/services.py's _DETAIL_CLIENTS as new types land.
-const HISTORY_CAPABLE_TYPES = new Set(['sonarr', 'radarr', 'seerr'])
+const HISTORY_CAPABLE_TYPES = new Set(['sonarr', 'radarr', 'seerr', 'nzbget', 'sabnzbd'])
 
 // The category filter's pipelines, by service type — including the planned
 // ones, so each option appears on its own once a service of that type is

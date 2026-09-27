@@ -11,6 +11,9 @@ import MovieLibraryList from '../components/MovieLibraryList'
 import CalendarPage from '../components/CalendarPage'
 import SeerrRequests from '../components/SeerrRequests'
 import SeerrIssues from '../components/SeerrIssues'
+import DownloadOverview from '../components/DownloadOverview'
+import DownloadQueue from '../components/DownloadQueue'
+import DownloadHistory from '../components/DownloadHistory'
 import { getServiceAccent } from '../utils/serviceAccent'
 
 interface Service {
@@ -23,6 +26,11 @@ interface Service {
 // Tabs per service type. The first tab is the library, and the default
 // landing tab (clicking a service from the dashboard lands on its library);
 // an explicit ?tab= wins when it's a tab this type has.
+const DOWNLOAD_CLIENT_TABS = [
+  { key: 'queue', label: 'Queue' },
+  { key: 'history', label: 'History' },
+]
+
 const TABS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
   sonarr: [
     { key: 'series', label: 'Series' },
@@ -40,7 +48,13 @@ const TABS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
     { key: 'requests', label: 'Requests' },
     { key: 'issues', label: 'Issues' },
   ],
+  nzbget: DOWNLOAD_CLIENT_TABS,
+  sabnzbd: DOWNLOAD_CLIENT_TABS,
 }
+
+// Download clients (NZBGet, SABnzbd) share one set of views, fed by clients
+// that return the same shapes.
+const DOWNLOAD_CLIENT_TYPES = new Set(['nzbget', 'sabnzbd'])
 
 export default function ServiceDetail() {
   const { id } = useParams<{ id: string }>()
@@ -108,6 +122,8 @@ export default function ServiceDetail() {
         )}
       </div>
 
+      {service && DOWNLOAD_CLIENT_TYPES.has(service.type) && id && <DownloadOverview serviceId={id} accent={accent} />}
+
       <div className="flex gap-1 mb-4 overflow-x-auto">
         {tabs.map((t) => (
           <button
@@ -153,6 +169,10 @@ export default function ServiceDetail() {
         <SeerrRequests serviceId={id ?? ''} accent={accent} />
       ) : tab === 'issues' ? (
         <SeerrIssues serviceId={id ?? ''} accent={accent} />
+      ) : tab === 'queue' ? (
+        <DownloadQueue serviceId={id ?? ''} serviceType={service.type} accent={accent} />
+      ) : tab === 'history' ? (
+        <DownloadHistory serviceId={id ?? ''} accent={accent} />
       ) : null}
     </div>
   )

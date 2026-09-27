@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import ServiceIcon from '../components/ServiceIcon'
@@ -33,7 +33,11 @@ const EMPTY_FORM = {
 export default function Services() {
   const navigate = useNavigate()
   const [services, setServices] = useState<Service[]>([])
-  const [showForm, setShowForm] = useState(false)
+  // The add form is opened from the user menu's "Add service" (?add=1), so
+  // it's driven by the URL rather than a button on this page.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const showForm = searchParams.get('add') === '1'
+  const setShowForm = (open: boolean) => setSearchParams(open ? { add: '1' } : {})
   const [form, setForm] = useState(EMPTY_FORM)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [testing, setTesting] = useState(false)
@@ -42,6 +46,11 @@ export default function Services() {
   const [rowBusy, setRowBusy] = useState<Record<number, string>>({})
   const [rowTestResult, setRowTestResult] = useState<Record<number, { ok: boolean; message: string }>>({})
   const [statusById, setStatusById] = useState<Record<number, StatusInfo>>({})
+  // NZBGet has no API key — it logs in with its own username/password,
+  // sent (and stored encrypted) as "username:password" in the key field.
+  const [nzbUser, setNzbUser] = useState('')
+  const [nzbPass, setNzbPass] = useState('')
+  const credential = form.type === 'nzbget' ? (nzbUser || nzbPass ? `${nzbUser}:${nzbPass}` : '') : form.api_key
 
   async function load() {
     setServices(await api.get<Service[]>('/services/'))
@@ -66,7 +75,7 @@ export default function Services() {
       const result = await api.post<{ ok: boolean; message: string }>('/services/test-connection', {
         type: form.type,
         base_url: form.base_url,
-        api_key: form.api_key,
+        api_key: credential,
       })
       setTestResult(result)
     } catch (err) {
@@ -106,9 +115,11 @@ export default function Services() {
     setError('')
     setSaving(true)
     try {
-      await api.post('/services/', form)
+      await api.post('/services/', { ...form, api_key: credential })
       setShowForm(false)
       setForm(EMPTY_FORM)
+      setNzbUser('')
+      setNzbPass('')
       setTestResult(null)
       await load()
     } catch (err) {
@@ -121,13 +132,7 @@ export default function Services() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-100">Monitored services</h2>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium px-3 py-1.5"
-        >
-          {showForm ? 'Cancel' : '+ Add service'}
-        </button>
+        <h2 className="text-lg font-semibold text-slate-100">{showForm ? 'Add a service' : 'Monitored services'}</h2>
       </div>
 
       {showForm && (
@@ -142,16 +147,27 @@ export default function Services() {
                 <option value="sonarr">Sonarr</option>
                 <option value="radarr">Radarr</option>
                 <option value="seerr">Seerr</option>
-                <option value="nzbget" disabled>NZBGet (coming soon)</option>
-                <option value="sabnzbd" disabled>SABnzbd (coming soon)</option>
+                <option value="nzbget">NZBGet</option>
+                <option value="sabnzbd">SABnzbd</option>
               </select>
             </Field>
             <Field label="Base URL">
-              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </Field>
-            <Field label="API key">
-              <input className="input" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
-            </Field>
+            {form.type === 'nzbget' ? (
+              <>
+                <Field label="Username">
+                  <input className="input" autoComplete="off" value={nzbUser} onChange={(e) => setNzbUser(e.target.value)} />
+                </Field>
+                <Field label="Password">
+                  <input className="input" type="password" autoComplete="new-password" value={nzbPass} onChange={(e) => setNzbPass(e.target.value)} />
+                </Field>
+              </>
+            ) : (
+              <Field label="API key">
+                <input className="input" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
+              </Field>
+            )}
             <Field label="Poll interval (seconds)">
               <input className="input" type="number" min={10} value={form.poll_interval_seconds} onChange={(e) => setForm({ ...form, poll_interval_seconds: Number(e.target.value) })} />
             </Field>
@@ -164,7 +180,7 @@ export default function Services() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={testUnsaved} disabled={testing || !form.base_url || !form.api_key} className="btn-secondary">
+            <button onClick={testUnsaved} disabled={testing || !form.base_url || !credential} className="btn-secondary">
               {testing ? 'Testing…' : 'Test connection'}
             </button>
             {testResult && (
@@ -173,6 +189,9 @@ export default function Services() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowForm(false)} className="btn-secondary">
+              Cancel
+            </button>
             <button onClick={submit} disabled={saving || !form.name || !form.base_url} className="rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2">
               {saving ? 'Saving…' : 'Save service'}
             </button>
