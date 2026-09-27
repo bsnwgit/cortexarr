@@ -41,6 +41,7 @@ __all__ = [
     "set_series_monitored", "set_episode_monitored", "set_season_monitored",
     "search_episode", "search_season",
     "delete_episode_file", "delete_series",
+    "remove_queue_item", "import_queue_item",
 ]
 
 
@@ -117,8 +118,43 @@ async def get_queue(base_url: str, api_key: str, page_size: int = 50) -> list[di
             "timeleft": r.get("timeleft"),
             "download_client": r.get("downloadClient"),
             "messages": messages,
+            "episode_id": r.get("episodeId"),
+            "download_id": r.get("downloadId"),
         })
     return out
+
+
+async def remove_queue_item(base_url: str, api_key: str, queue_id: int, blocklist: bool, search: bool) -> None:
+    await arr_http.remove_queue_item(_APP, base_url, api_key, queue_id, blocklist=blocklist, search=search)
+
+
+async def import_queue_item(base_url: str, api_key: str, queue_id: int) -> int:
+    """Import a stuck download as what Sonarr already matched it to — the
+    fix for "matched to series by ID, automatic import is not possible".
+    Returns how many files were sent to import."""
+    q = await arr_http.queue_record(_APP, base_url, api_key, queue_id)
+    if not q.get("downloadId"):
+        raise ServiceApiError("Sonarr has no download id for this item, so it can't be imported from here")
+    params = {"downloadId": q["downloadId"], "filterExistingFiles": "true"}
+    if q.get("seriesId"):
+        params["seriesId"] = q["seriesId"]
+    preview = [i for i in await _get(base_url, api_key, "/api/v3/manualimport", params=params) if not arr_http.is_sample(i)]
+    if not preview:
+        raise ServiceApiError("Sonarr found no files to import for this download — they may be gone, or Sonarr sees "
+                              "a different path than the download client (check Remote Path Mappings)")
+    files = []
+    for item in preview:
+        episodes = [e.get("id") for e in item.get("episodes") or [] if e.get("id")]
+        # A single-file download Sonarr couldn't parse is the episode it was grabbed for.
+        if not episodes and len(preview) == 1 and q.get("episodeId"):
+            episodes = [q["episodeId"]]
+        series_id = (item.get("series") or {}).get("id") or q.get("seriesId")
+        if not episodes or not series_id:
+            raise ServiceApiError("Sonarr can't tell which episodes these files are — use Interactive Import in Sonarr")
+        files.append({**arr_http.import_file(item), "seriesId": series_id, "episodeIds": episodes,
+                      "releaseType": item.get("releaseType") or "singleEpisode"})
+    await arr_http.manual_import(_APP, base_url, api_key, files)
+    return len(files)
 
 
 async def get_wanted_missing(base_url: str, api_key: str, page_size: int = 1000) -> list[dict[str, Any]]:

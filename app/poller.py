@@ -22,6 +22,7 @@ import aiosqlite
 
 from app.crypto import decrypt_str
 from app.database import DB_PATH
+from app.notifications import engine as alerts
 from app.services import nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError
 
@@ -68,12 +69,14 @@ async def _check_one(db: aiosqlite.Connection, service: aiosqlite.Row) -> None:
                 await asyncio.sleep(backoff * (attempt + 1))
 
     if result is None:
+        status, connectivity_ok, summary = "unreachable", False, last_error
         await db.execute(
             "INSERT INTO health_snapshots (service_instance_id, connectivity_ok, status, detail) "
             "VALUES (?, 0, 'unreachable', ?)",
             (service["id"], json.dumps({"error": last_error})),
         )
     else:
+        status, connectivity_ok, summary = result.status, result.connectivity_ok, result.detail
         await db.execute(
             "INSERT INTO health_snapshots (service_instance_id, connectivity_ok, status, detail) "
             "VALUES (?, ?, ?, ?)",
@@ -81,6 +84,12 @@ async def _check_one(db: aiosqlite.Connection, service: aiosqlite.Row) -> None:
              json.dumps({"issues": result.issues, "summary": result.detail})),
         )
     await db.commit()
+
+    # Alerting must never cost a health check, so its failures stop here.
+    try:
+        await alerts.process(db, service, api_key, status, connectivity_ok, summary or "")
+    except Exception:
+        log.exception("Alert processing failed for service %s", service["id"])
 
 
 async def _prune(db: aiosqlite.Connection) -> None:
@@ -110,6 +119,11 @@ async def run_forever() -> None:
                     types,
                 ) as cur:
                     services = await cur.fetchall()
+
+                try:
+                    await alerts.forget_paused(db)
+                except Exception:
+                    log.exception("Alert cleanup for paused services failed")
 
                 now = time.time()
                 for service in services:

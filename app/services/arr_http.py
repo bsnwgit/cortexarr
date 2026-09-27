@@ -154,6 +154,52 @@ async def delete(app: str, base_url: str, api_key: str, path: str, params: dict[
     await _request(app, "DELETE", base_url, api_key, path, params=params, timeout=timeout)
 
 
+# ---------------------------------------------------------------------------
+# Queue fixes — shared by Sonarr and Radarr, whose queue and manual-import
+# APIs have the same shape. Used by the Alerts page's action buttons.
+# ---------------------------------------------------------------------------
+
+async def queue_record(app: str, base_url: str, api_key: str, queue_id: int) -> dict[str, Any]:
+    """One raw queue record by id (there's no GET /queue/{id})."""
+    data = await get(app, base_url, api_key, "/api/v3/queue", params={"pageSize": 1000})
+    for r in (data.get("records", []) if isinstance(data, dict) else []):
+        if r.get("id") == queue_id:
+            return r
+    raise ServiceApiError(f"That item is no longer in {app}'s queue")
+
+
+async def remove_queue_item(app: str, base_url: str, api_key: str, queue_id: int, *, blocklist: bool, search: bool) -> None:
+    """Remove from the queue and the download client. blocklist stops the
+    same release being grabbed again; search then looks for another one."""
+    await delete(app, base_url, api_key, f"/api/v3/queue/{queue_id}", params={
+        "removeFromClient": "true",
+        "blocklist": str(blocklist).lower(),
+        "skipRedownload": str(not search).lower(),
+    })
+
+
+async def manual_import(app: str, base_url: str, api_key: str, files: list[dict[str, Any]]) -> None:
+    """The same command the app's own Interactive Import sends."""
+    await post(app, base_url, api_key, "/api/v3/command", {"name": "ManualImport", "importMode": "auto", "files": files})
+
+
+def import_file(item: dict[str, Any]) -> dict[str, Any]:
+    """The fields both apps' ManualImportFile shares, from a manualimport preview row."""
+    return {
+        "path": item.get("path"),
+        "folderName": item.get("folderName"),
+        "quality": item.get("quality"),
+        "languages": item.get("languages") or [],
+        "releaseGroup": item.get("releaseGroup"),
+        "indexerFlags": item.get("indexerFlags") or 0,
+        "downloadId": item.get("downloadId"),
+    }
+
+
+def is_sample(item: dict[str, Any]) -> bool:
+    return any("sample" in (r.get("reason") or "").lower() for r in item.get("rejections") or [])
+
+
 def cover_url(images: list[dict[str, Any]] | None, cover_type: str) -> str:
     """Prefer remoteUrl (a public CDN — thetvdb/tmdb/fanart.tv — the
     frontend can load directly) over the app's own `url`, which is a path on

@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
 import type { ServiceAccent } from '../utils/serviceAccent'
+import { zonedDay } from '../utils/time'
 
 // A service-neutral calendar entry — each caller maps its own API rows
 // (Sonarr episodes, Radarr release dates) into this shape, so the grid
@@ -15,10 +16,6 @@ export interface GridEvent {
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
 
 // The actual grid: a month at a time, one cell per day, events plotted on
 // their date rather than listed as rows. Shared by every Calendar tab and
@@ -38,7 +35,10 @@ export default function CalendarGrid({
   const firstOfMonth = new Date(year, monthIndex, 1)
   const startDay = firstOfMonth.getDay() // 0 = Sunday
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
-  const today = new Date()
+  // Grid cells are plain local dates (labels); entries and today are placed
+  // by their day in the configured time zone.
+  const now = zonedDay(new Date())
+  const todayKey = `${now.year}-${now.month}-${now.day}`
 
   const cells: (Date | null)[] = []
   for (let i = 0; i < startDay; i++) cells.push(null)
@@ -50,7 +50,8 @@ export default function CalendarGrid({
     if (!ev.date) continue
     const d = new Date(ev.date)
     if (Number.isNaN(d.getTime())) continue
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    const z = zonedDay(d)
+    const key = `${z.year}-${z.month}-${z.day}`
     const list = byDay.get(key) ?? []
     list.push(ev)
     byDay.set(key, list)
@@ -74,7 +75,7 @@ export default function CalendarGrid({
           if (!date) return <div key={i} className="min-h-[80px] rounded-lg bg-transparent" />
           const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
           const dayEvents = byDay.get(key) ?? []
-          const isToday = isSameDay(date, today)
+          const isToday = key === todayKey
           return (
             <div
               key={i}

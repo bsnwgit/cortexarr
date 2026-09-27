@@ -1,3 +1,4 @@
+import { fmtDateTime } from '../utils/time'
 interface HistoryRow {
   id: number
   event_type: string
@@ -10,7 +11,7 @@ interface HistoryRow {
 function fmtDate(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateTime(d)
 }
 
 // The third column defaults to the episode (series/season history); a

@@ -23,7 +23,7 @@ from app.config import get_settings
 from app.database import init_db, seed_admin
 
 from app.api import auth, users, services, settings as settings_router, status as status_router, audit as audit_router
-from app.api import tokens
+from app.api import alerts, tokens
 from app.mcp import server as mcp_server
 
 settings = get_settings()
@@ -84,6 +84,7 @@ app.include_router(services.router, prefix="/api/services", tags=["services"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 app.include_router(tokens.router, prefix="/api/tokens", tags=["tokens"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 # Token-authenticated, for outside AI tools — see app/mcp/server.py.
 app.include_router(mcp_server.router, tags=["mcp"])
 # Public, unauthenticated — see app/api/status.py's module docstring.

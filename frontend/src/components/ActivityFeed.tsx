@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import DataTable, { type Column } from './DataTable'
 import ServiceIcon from './ServiceIcon'
 import { getServiceAccent } from '../utils/serviceAccent'
+import { fmtDateTime } from '../utils/time'
 
 interface Service {
   id: number
@@ -59,7 +60,7 @@ function rowTitle(r: HistoryItem): string {
 function fmtDate(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateTime(d)
 }
 
 const ACTIVITY_COLUMNS: Column<ActivityRow>[] = [

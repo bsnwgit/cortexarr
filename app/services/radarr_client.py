@@ -34,6 +34,7 @@ __all__ = [
     "get_queue", "get_wanted_missing", "get_calendar", "get_movies", "get_history",
     "get_movie_detail", "get_movie_history",
     "set_movie_monitored", "search_movie", "delete_movie_file", "delete_movie",
+    "remove_queue_item", "import_queue_item",
 ]
 
 _APP = "Radarr"
@@ -138,6 +139,7 @@ async def get_queue(base_url: str, api_key: str, page_size: int = 50) -> list[di
             "timeleft": r.get("timeleft"),
             "download_client": r.get("downloadClient"),
             "messages": messages,
+            "download_id": r.get("downloadId"),
         })
     return out
 
@@ -302,3 +304,30 @@ async def delete_movie(base_url: str, api_key: str, movie_id: int, delete_files:
         base_url, api_key, f"/api/v3/movie/{movie_id}",
         params={"deleteFiles": str(delete_files).lower(), "addImportExclusion": "false"},
     )
+
+
+async def remove_queue_item(base_url: str, api_key: str, queue_id: int, blocklist: bool, search: bool) -> None:
+    await arr_http.remove_queue_item(_APP, base_url, api_key, queue_id, blocklist=blocklist, search=search)
+
+
+async def import_queue_item(base_url: str, api_key: str, queue_id: int) -> int:
+    """Import a stuck download as the movie Radarr already matched it to.
+    Returns how many files were sent to import."""
+    q = await arr_http.queue_record(_APP, base_url, api_key, queue_id)
+    if not q.get("downloadId"):
+        raise ServiceApiError("Radarr has no download id for this item, so it can't be imported from here")
+    params = {"downloadId": q["downloadId"], "filterExistingFiles": "true"}
+    if q.get("movieId"):
+        params["movieId"] = q["movieId"]
+    preview = [i for i in await _get(base_url, api_key, "/api/v3/manualimport", params=params) if not arr_http.is_sample(i)]
+    if not preview:
+        raise ServiceApiError("Radarr found no files to import for this download — they may be gone, or Radarr sees "
+                              "a different path than the download client (check Remote Path Mappings)")
+    files = []
+    for item in preview:
+        movie_id = (item.get("movie") or {}).get("id") or q.get("movieId")
+        if not movie_id:
+            raise ServiceApiError("Radarr can't tell which movie these files are — use Interactive Import in Radarr")
+        files.append({**arr_http.import_file(item), "movieId": movie_id})
+    await arr_http.manual_import(_APP, base_url, api_key, files)
+    return len(files)

@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable, Literal, Optional
 import aiosqlite
 from pydantic import BaseModel, EmailStr, Field
 
+from app.api import alerts as alerts_api
 from app.api import audit as audit_api
 from app.api import services as svc
 from app.api import settings as settings_api
@@ -231,6 +232,41 @@ class NotificationPrefArgs(ChannelArgs):
     target: str = Field(default="", max_length=500, description="Address / URL / topic / phone number")
 
 
+class RuleIdArgs(BaseModel):
+    rule_id: int = Field(description="Rule id, from list_alert_rules")
+
+
+class UpdateRuleArgs(RuleIdArgs, alerts_api.RuleUpdate):
+    pass
+
+
+class FixArgs(ServiceArg):
+    key: str = Field(min_length=1, max_length=200, description="The problem's key, from get_active_problems")
+    action: Literal["import", "retry_download", "retry_request", "test_connection"] = Field(
+        description="One of the problem's suggested actions")
+
+
+class RemoveStuckArgs(ServiceArg):
+    key: str = Field(min_length=1, max_length=200, description="The stuck item's key, from get_active_problems")
+    action: Literal["remove", "redownload"] = Field(
+        description="remove: drop it; redownload: drop it, blocklist the release, search for another")
+
+
+class BulkFixArgs(BaseModel):
+    items: list[alerts_api.ProblemRef] = Field(min_length=1, max_length=500,
+                                               description="Problems as {service_id, key}, from get_active_problems")
+    action: Literal["import", "retry_download", "retry_request", "test_connection"]
+
+
+class BulkRemoveArgs(BaseModel):
+    items: list[alerts_api.ProblemRef] = Field(min_length=1, max_length=500)
+    action: Literal["remove", "redownload"]
+
+
+class UnsnoozeArgs(ServiceArg):
+    key: str = Field(min_length=1, max_length=200)
+
+
 class CreateUserArgs(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     email: EmailStr
@@ -324,6 +360,16 @@ TOOLS: list[Tool] = [
     Tool("get_my_notification_prefs", "This user's own notification channels and targets.",
          NoArgs, lambda db, u, a: users_api.get_my_notification_prefs(u, db)),
 
+    # -- Alerts (read) --------------------------------------------------------
+    Tool("get_active_problems",
+         "What's wrong right now, as the alert engine sees it: unreachable/erroring services, stuck queue items, "
+         "recent failed downloads, failed requests and reported issues — with when each was first seen.",
+         NoArgs, lambda db, u, a: alerts_api.active_problems(u, db)),
+    Tool("list_alert_rules", "The alert rules: which event, which service, threshold, channels.",
+         NoArgs, lambda db, u, a: alerts_api.list_rules(u, db)),
+    Tool("get_alert_log", "Alerts sent, newest first, with each channel's result.",
+         LimitArgs, lambda db, u, a: alerts_api.alert_log(u, db, a.limit)),
+
     # -- Admin reads ----------------------------------------------------------
     Tool("get_audit_log", "Configuration changes: who changed what, newest first.",
          LimitArgs, lambda db, u, a: audit_api.list_audit_log(u, db, a.limit), min_role="admin"),
@@ -398,6 +444,56 @@ TOOLS: list[Tool] = [
          NotificationPrefArgs,
          lambda db, u, a: users_api.set_my_notification_pref(users_api.NotificationPref(**a.model_dump()), u, db),
          kind="write"),
+    Tool("create_alert_rule",
+         "Add an alert rule. Events: unreachable, error, warning (a service's health), stuck (Sonarr/Radarr queue "
+         "item), download_failed (NZBGet/SABnzbd), request_issue (Seerr). threshold_minutes: how long it must "
+         "persist first. Omit service_id for every service.",
+         alerts_api.RuleIn, lambda db, u, a: alerts_api.create_rule(a, u, db),
+         min_role="admin", kind="write"),
+    Tool("update_alert_rule", "Change an alert rule. Omitted fields are left alone; all_services=true clears service_id.",
+         UpdateRuleArgs,
+         lambda db, u, a: alerts_api.update_rule(
+             a.rule_id, alerts_api.RuleUpdate(**a.model_dump(exclude={"rule_id"}, exclude_none=True)), u, db),
+         min_role="admin", kind="write"),
+    Tool("delete_alert_rule", "Delete an alert rule.",
+         RuleIdArgs, lambda db, u, a: alerts_api.delete_rule(a.rule_id, u, db),
+         min_role="admin", kind="write"),
+    Tool("test_alert_rule", "Send a sample of a rule's alert through its channels now.",
+         RuleIdArgs, lambda db, u, a: alerts_api.test_rule(a.rule_id, u, db),
+         min_role="admin", kind="write"),
+    Tool("snooze_problem",
+         "Silence one current problem (from get_active_problems) for some minutes, or omit minutes to "
+         "acknowledge it until it clears. It stays listed; it just stops alerting and reminding.",
+         alerts_api.SnoozeIn, lambda db, u, a: alerts_api.snooze(a, u, db),
+         min_role="analyst", kind="write"),
+    Tool("unsnooze_problem", "Remove a snooze or acknowledgement, so the problem can alert again.",
+         UnsnoozeArgs, lambda db, u, a: alerts_api.unsnooze(a.service_id, a.key, u, db),
+         min_role="analyst", kind="write"),
+    Tool("fix_problem",
+         "Apply one of a current problem's suggested fixes (see its 'actions' in get_active_problems): import a "
+         "stuck download as what Sonarr/Radarr matched, retry a failed download or Seerr request, or test a "
+         "service's connection.",
+         FixArgs, lambda db, u, a: alerts_api.fix(alerts_api.FixIn(**a.model_dump()), u, db),
+         min_role="admin", kind="write"),
+    Tool("remove_stuck_item",
+         "Remove a stuck Sonarr/Radarr queue item from the queue and download client — optionally blocklisting "
+         "the release and searching for another (redownload).",
+         RemoveStuckArgs, lambda db, u, a: alerts_api.fix(alerts_api.FixIn(**a.model_dump()), u, db),
+         min_role="admin", kind="destructive"),
+    Tool("fix_problems",
+         "Apply one fix to many current problems at once (e.g. import every stuck item). All the problems must "
+         "have the same set of actions in get_active_problems. Downloads shared by several items are handled "
+         "once. Returns how each went.",
+         BulkFixArgs, lambda db, u, a: alerts_api.fix_bulk(alerts_api.BulkFixIn(**a.model_dump()), u, db),
+         min_role="admin", kind="write"),
+    Tool("remove_stuck_items",
+         "Remove many stuck Sonarr/Radarr queue items from the queue and download client at once — optionally "
+         "blocklisting each release and searching for another (redownload).",
+         BulkRemoveArgs, lambda db, u, a: alerts_api.fix_bulk(alerts_api.BulkFixIn(**a.model_dump()), u, db),
+         min_role="admin", kind="destructive"),
+    Tool("snooze_problems", "Snooze or acknowledge many current problems at once; all must have the same set of actions.",
+         alerts_api.BulkSnoozeIn, lambda db, u, a: alerts_api.snooze_bulk(a, u, db),
+         min_role="analyst", kind="write"),
     Tool("create_user", "Add a Cortexarr user.",
          CreateUserArgs, lambda db, u, a: users_api.create_user(users_api.CreateUser(**a.model_dump()), u, db),
          min_role="admin", kind="write"),

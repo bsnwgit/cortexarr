@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import MonitoredToggle from './MonitoredToggle'
 import type { ServiceAccent } from '../utils/serviceAccent'
+import { fmtDateOnly } from '../utils/time'
 
 interface WantedItem {
   id: number
@@ -23,7 +24,7 @@ function seriesLink(serviceId: string, item: WantedItem): string | null {
 function fmtDate(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateOnly(d)
 }
 
 // All missing episodes, grouped by series — the "Missing" tab. Distinct

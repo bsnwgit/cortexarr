@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api/client'
+import { allTimeZones, setTimeZone } from '../utils/time'
 
 type Settings = Record<string, any>
 
@@ -28,6 +29,7 @@ export default function SettingsPage() {
     setSaving(true)
     try {
       await api.post('/settings/bulk', settings)
+      setTimeZone(settings.timezone)
     } finally {
       setSaving(false)
     }
@@ -91,6 +93,14 @@ export default function SettingsPage() {
 
       <div className="bg-slate-925 border border-slate-800 rounded-xl p-4 space-y-3">
         <h3 className="font-medium text-slate-100">General</h3>
+        <Row label="Time zone (for every time shown, and alert messages)">
+          <select className="input" value={settings.timezone || ''} onChange={(e) => set('timezone', e.target.value)}>
+            <option value="">Browser default — each viewer's own ({Intl.DateTimeFormat().resolvedOptions().timeZone})</option>
+            {allTimeZones().map((z) => (
+              <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+        </Row>
         <Row label="Notification batching window (minutes, 0 = immediate)">
           <input className="input" type="number" min={0} value={settings.notify_batch_window_minutes ?? 0} onChange={(e) => set('notify_batch_window_minutes', Number(e.target.value))} />
         </Row>

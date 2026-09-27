@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import clsx from 'clsx'
 import UserMenu from './UserMenu'
 import CortexarrLogo from './icons/CortexarrLogo'
+import { api } from '../api/client'
+import { setTimeZone } from '../utils/time'
 
 // Same tab/layout shape as the rest of the bsnw suite (top nav, active-tab
 // underline, content panel below) — see Positioning decision in project
@@ -12,6 +15,17 @@ const TABS = [
 ]
 
 export default function Layout() {
+  // Pages render once the time zone is known, so no date is drawn in the
+  // wrong zone first. A failed load falls back to the browser's own zone.
+  const [zoneReady, setZoneReady] = useState(false)
+  useEffect(() => {
+    api
+      .get<{ timezone?: string }>('/settings/')
+      .then((s) => setTimeZone(s.timezone))
+      .catch(() => setTimeZone(null))
+      .finally(() => setZoneReady(true))
+  }, [])
+
   return (
     <div className="min-h-screen bg-slate-950">
       <header className="border-b border-slate-800 bg-slate-925/80 backdrop-blur sticky top-0 z-10">
@@ -45,7 +59,7 @@ export default function Layout() {
         </div>
       </header>
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-        <Outlet />
+        {zoneReady && <Outlet />}
       </main>
     </div>
   )
