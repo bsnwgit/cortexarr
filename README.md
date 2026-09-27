@@ -28,9 +28,13 @@ leaving the page.
   progress and post-processing stage, and history with failure reasons and
   **Retry**. Pause/resume a download or everything at once.
 - **Dashboard** — requests run full width across the top; below, one card
-  per service with nested cards for whatever needs attention.
+  per service with nested cards for whatever needs attention. Each card can
+  be refreshed on its own or opened in the service's own web UI.
 - **Logs** — one activity feed across every service (filterable by
   pipeline), plus an audit log of every change made in Cortexarr.
+- **MCP server** — AI tools (any MCP client) can do everything the web UI
+  does, through personal API tokens that are read-only by default and never
+  delete anything unless you allow it.
 - Per-service health polling with retry/backoff, a connection test that
   also checks the URL really is the service you picked, role-based access
   (admin / analyst / viewer), and notifications over email, Slack/Discord
@@ -54,13 +58,11 @@ Planned but not built yet — kept here so none of it gets lost:
 - **Per-user notification preferences page** — supported by the API, no
   page in the UI yet.
 - **User management page** — users are managed through the API for now.
-- **Link to the real app from each dashboard card** — a small icon on every
-  pipeline card that opens that service's own web UI.
 - **Push instead of poll** — accept Sonarr/Radarr webhooks rather than only
   polling them.
 - **History and trends** — reporting over time, beyond the live views.
-- **MCP server and AI provider integration** — everything the web UI does,
-  available to AI agents; pluggable AI providers.
+- **AI provider integration** — pluggable AI providers inside Cortexarr
+  itself (the MCP server for outside AI tools is built).
 - **Config export / import** — back up or move the service list and
   settings (credentials excluded unless you choose to include them).
 - **Self-update** — manual or automatic updates from GitHub releases, within
@@ -112,11 +114,12 @@ remove that too).
 1. Open Cortexarr in a browser and sign in as `admin` with the password the
    installer printed. Change it from the user menu (your username, top
    right).
-2. From the same menu, choose **Add service**. Pick the type, enter its URL
+2. From the same menu, under **Services**, choose **Add service**. Pick the type, enter its URL
    and API key (NZBGet asks for its username and password instead), and
    **Test connection** before saving.
 3. Repeat for each service you run. The Dashboard fills in as they're
-   checked.
+   checked. **Manage services** in the same menu lists them, with test,
+   maintenance mode, and delete.
 
 The [User Guide](docs/USER_GUIDE.md) walks through each page; the
 [Admin Guide](docs/ADMIN_GUIDE.md) covers adding services, maintenance

@@ -3,7 +3,8 @@
 ## Your account
 
 Click your username in the top-right corner for **Services** (the list of
-monitored services), **Settings**, **Change password**, and **Log out**.
+monitored services), **Settings**, **API tokens**, **Change password**, and
+**Log out**.
 Admins also see **Add service** under Services (see the
 [Admin Guide](ADMIN_GUIDE.md)).
 
@@ -144,3 +145,27 @@ Per-user notification preferences (which channels *you* personally receive
 alerts through, independent of the instance-wide settings an admin
 configures) are supported by the API but don't have a settings page in the
 UI yet.
+
+## API tokens and AI tools
+
+Cortexarr is an MCP server: an AI tool that speaks MCP can check your
+pipeline's health, look through queues, libraries, requests and history,
+and — with the right token — act on them, the same as you can in the web UI.
+
+User menu → **API tokens** → **New token**. Give it a name you'll recognise
+and an expiry, then copy the token straight away — it's shown only once.
+The page also gives a ready-made client config: the server URL is
+`http(s)://<your Cortexarr>/mcp`, and the token goes in an
+`Authorization: Bearer <token>` header.
+
+- **Read** tokens can only look. Anyone can make one.
+- **Write** tokens can also change things — monitor, search, approve,
+  pause, change settings. Admins only, because every write is admin-only.
+- **Allow destructive tools** (admins, write tokens only) adds deleting
+  services, series, movies, files, and downloads. The AI tool won't ask
+  before it does, so leave this off unless you need it.
+
+A token acts as you: anything it changes shows in the audit log as
+`<you> (MCP: <token name>)`. **Revoke** stops a token immediately. A token
+can't change your password or make other tokens.
+

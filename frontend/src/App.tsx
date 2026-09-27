@@ -10,6 +10,7 @@ import SeriesSeasons from './pages/SeriesSeasons'
 import MovieDetail from './pages/MovieDetail'
 import SettingsPage from './pages/Settings'
 import Logs from './pages/Logs'
+import ApiTokens from './pages/ApiTokens'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -37,6 +38,7 @@ function AppRoutes() {
         <Route path="services/:id/movies/:movieId" element={<MovieDetail />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="tokens" element={<ApiTokens />} />
       </Route>
     </Routes>
   )
