@@ -1,7 +1,8 @@
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import ServiceIcon from './ServiceIcon'
+import OpenServiceLink from './OpenServiceLink'
 import StatusPill, { type StatusInfo } from './StatusPill'
 import SonarrDashboardCard from './SonarrDashboardCard'
 import RadarrDashboardCard from './RadarrDashboardCard'
@@ -13,6 +14,7 @@ export interface DashboardService extends StatusInfo {
   id: number
   name: string
   type: string
+  base_url?: string
 }
 
 // A plain fallback for any service type without its own rich card yet —
@@ -21,20 +23,29 @@ export interface DashboardService extends StatusInfo {
 // ServiceIcon/serviceAccent.
 function PlainServiceCard({ service }: { service: DashboardService }) {
   const accent = getServiceAccent(service.type)
+  const navigate = useNavigate()
   return (
-    <Link
-      to={`/services/${service.id}`}
-      className={clsx('block bg-slate-925 border border-slate-800 rounded-xl p-4 transition-colors', accent.hoverBorder)}
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(`/services/${service.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') navigate(`/services/${service.id}`)
+      }}
+      className={clsx('block bg-slate-925 border border-slate-800 rounded-xl p-4 transition-colors cursor-pointer', accent.hoverBorder)}
     >
       <div className="flex items-center justify-between mb-2">
         <span className="flex items-center gap-2 font-medium text-slate-100">
           <ServiceIcon type={service.type} className="w-5 h-5 rounded-sm shrink-0" />
           {service.name}
         </span>
-        <StatusPill service={service} accent={accent} />
+        <span className="flex items-center gap-1.5">
+          <OpenServiceLink url={service.base_url} name={service.name} />
+          <StatusPill service={service} accent={accent} />
+        </span>
       </div>
       <div className={clsx('text-xs capitalize', accent.text)}>{service.type}</div>
-    </Link>
+    </div>
   )
 }
 

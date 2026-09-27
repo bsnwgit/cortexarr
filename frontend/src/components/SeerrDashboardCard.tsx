@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { api } from '../api/client'
 import ServiceIcon from './ServiceIcon'
+import OpenServiceLink from './OpenServiceLink'
+import RefreshButton, { useRefresh } from './RefreshButton'
 import StatusPill, { type StatusInfo } from './StatusPill'
 import { getServiceAccent } from '../utils/serviceAccent'
 import { REQUEST_STATE_LABELS, requestStateClass, type RequestState } from '../utils/seerrFormat'
@@ -22,6 +24,7 @@ interface DashboardService extends StatusInfo {
   id: number
   name: string
   type: string
+  base_url?: string
 }
 
 const MAX_TILES = 14
@@ -39,6 +42,7 @@ export default function SeerrDashboardCard({ service }: { service: DashboardServ
   const [requests, setRequests] = useState<SeerrRequest[]>([])
   const [openIssues, setOpenIssues] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const { tick, refreshing, refresh, done } = useRefresh()
 
   useEffect(() => {
     let cancelled = false
@@ -58,7 +62,10 @@ export default function SeerrDashboardCard({ service }: { service: DashboardServ
           setOpenIssues(null)
         }
       } finally {
-        if (!cancelled) setLoaded(true)
+        if (!cancelled) {
+          setLoaded(true)
+          done()
+        }
       }
     }
     load()
@@ -67,7 +74,7 @@ export default function SeerrDashboardCard({ service }: { service: DashboardServ
       cancelled = true
       clearInterval(interval)
     }
-  }, [service.id])
+  }, [service.id, tick, done])
 
   function linkProps(to: string) {
     const go = (e: MouseEvent | KeyboardEvent) => {
@@ -113,15 +120,15 @@ export default function SeerrDashboardCard({ service }: { service: DashboardServ
       <div className="absolute inset-0 bg-gradient-to-r from-slate-925 via-slate-925/90 to-slate-925/70" />
 
       <div className="relative p-4 flex flex-col gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <span className="flex items-center gap-2 font-medium text-slate-100">
+        {/* Name left, request counts centred, actions far right like the
+            other cards; on a phone the counts drop to their own row. */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <span className="order-1 flex-1 min-w-0 flex items-center gap-2 font-medium text-slate-100">
             <ServiceIcon type={service.type} className="w-6 h-6 rounded-sm shrink-0" />
             {service.name}
-            <span className="text-xs font-normal text-slate-400">Requests</span>
-            <StatusPill service={service} accent={accent} />
           </span>
           {loaded && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap justify-center gap-1.5">
               {counts.map((c) => (
                 <span
                   key={c.state}
@@ -139,6 +146,11 @@ export default function SeerrDashboardCard({ service }: { service: DashboardServ
               </span>
             </div>
           )}
+          <span className="order-2 sm:order-3 flex-1 flex items-center justify-end gap-1.5">
+            <RefreshButton onRefresh={refresh} refreshing={refreshing} label={`Refresh ${service.name}`} />
+            <OpenServiceLink url={service.base_url} name={service.name} />
+            <StatusPill service={service} accent={accent} />
+          </span>
         </div>
 
         {!loaded ? null : tiles.length === 0 ? (

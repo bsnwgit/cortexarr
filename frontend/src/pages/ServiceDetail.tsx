@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import ServiceIcon from '../components/ServiceIcon'
+import RefreshButton, { useRefresh } from '../components/RefreshButton'
 import SeriesLibraryList, { type SeriesLibraryItem } from '../components/SeriesLibraryList'
 import DownloadingPanel from '../components/DownloadingPanel'
 import MissingGrouped from '../components/MissingGrouped'
@@ -64,6 +65,9 @@ export default function ServiceDetail() {
   const tabs = TABS_BY_TYPE[service?.type ?? ''] ?? []
   const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : tabs[0]?.key
   const accent = getServiceAccent(service?.type ?? '')
+  // Refresh re-fetches the service and remounts the overview strip and the
+  // open tab, so every view below reloads through its own loader.
+  const { tick, refreshing, refresh, done } = useRefresh()
 
   const [series, setSeries] = useState<SeriesLibraryItem[]>([])
   const [seriesLoading, setSeriesLoading] = useState(true)
@@ -71,8 +75,8 @@ export default function ServiceDetail() {
 
   useEffect(() => {
     if (!id) return
-    api.get<Service>(`/services/${id}`).then(setService).catch(() => setService(null))
-  }, [id])
+    api.get<Service>(`/services/${id}`).then(setService).catch(() => setService(null)).finally(done)
+  }, [id, tick, done])
 
   useEffect(() => {
     if (!id || tab !== 'series') return
@@ -95,26 +99,39 @@ export default function ServiceDetail() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [id, tab])
+  }, [id, tab, tick])
 
   return (
     <div>
-      <div className="mb-4">
+      {/* Header band in the app's own color — name, URL, (download status),
+          and tabs — so each app's page reads as that app at a glance. */}
+      <div
+        className={clsx(
+          'rounded-xl border bg-gradient-to-r px-4 pt-3 pb-3 mb-4',
+          service ? clsx(accent.band, accent.border) : 'border-slate-800',
+        )}
+      >
+      <div className="mb-3">
         <Link to="/" className="text-xs text-slate-400 hover:text-slate-200">
           ← Back to dashboard
         </Link>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100 mt-1">
-          {service && <ServiceIcon type={service.type} className="w-6 h-6 rounded-sm shrink-0" />}
-          {service ? service.name : 'Service'}
-        </h2>
+        <div className="flex items-center justify-between gap-2 mt-1">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
+            {service && <ServiceIcon type={service.type} className="w-6 h-6 rounded-sm shrink-0" />}
+            {service ? service.name : 'Service'}
+          </h2>
+          {service && (
+            <RefreshButton onRefresh={refresh} refreshing={refreshing} label={`Refresh ${service.name}`} />
+          )}
+        </div>
         {service && (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-400">
             {service.type} ·{' '}
             <a
               href={service.base_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-slate-300 hover:underline"
+              className="hover:text-slate-200 hover:underline"
             >
               {service.base_url}
             </a>
@@ -122,9 +139,9 @@ export default function ServiceDetail() {
         )}
       </div>
 
-      {service && DOWNLOAD_CLIENT_TYPES.has(service.type) && id && <DownloadOverview serviceId={id} accent={accent} />}
+      {service && DOWNLOAD_CLIENT_TYPES.has(service.type) && id && <DownloadOverview key={tick} serviceId={id} accent={accent} />}
 
-      <div className="flex gap-1 mb-4 overflow-x-auto">
+      <div className="flex gap-1 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -140,7 +157,9 @@ export default function ServiceDetail() {
           </button>
         ))}
       </div>
+      </div>
 
+      <Fragment key={tick}>
       {!service ? null : tab === 'series' ? (
         <div className="bg-slate-925 border border-slate-800 rounded-xl p-2 sm:p-4">
           {seriesError ? (
@@ -174,6 +193,7 @@ export default function ServiceDetail() {
       ) : tab === 'history' ? (
         <DownloadHistory serviceId={id ?? ''} accent={accent} />
       ) : null}
+      </Fragment>
     </div>
   )
 }
