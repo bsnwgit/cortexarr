@@ -70,53 +70,9 @@ export default function UserMenu() {
               <div className="px-2 py-1 text-xs text-slate-500">
                 Signed in as <span className="text-slate-300">{user?.username}</span> ({user?.role})
               </div>
-              {/* Services live here rather than as a top tab — managing them
-                  is occasional, the Dashboard is where they're watched. */}
-              <div className="border-t border-slate-800 pt-1 mt-1">
-                <div className="px-2 pt-1 pb-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">Services</div>
-                <button
-                  onClick={() => {
-                    setOpen(false)
-                    navigate('/services')
-                  }}
-                  className="w-full text-left rounded-lg pl-4 pr-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
-                >
-                  Manage services
-                </button>
-                {user?.role === 'admin' && (
-                  <button
-                    onClick={() => {
-                      setOpen(false)
-                      navigate('/services?add=1')
-                    }}
-                    className="w-full text-left rounded-lg pl-4 pr-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
-                  >
-                    Add service
-                  </button>
-                )}
-              </div>
-              <div className="border-t border-slate-800 pt-1 mt-1" />
-              {/* Watching what's happened and what's wrong — Alerts and the logs. */}
-              <div className="px-2 pt-1 pb-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">Monitoring</div>
-              <button
-                onClick={() => {
-                  setOpen(false)
-                  navigate('/alerts')
-                }}
-                className="w-full text-left rounded-lg pl-4 pr-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
-              >
-                Alerts
-              </button>
-              <button
-                onClick={() => {
-                  setOpen(false)
-                  navigate('/logs')
-                }}
-                className="w-full text-left rounded-lg pl-4 pr-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
-              >
-                Logs
-              </button>
-              <div className="border-t border-slate-800 pt-1 mt-1" />
+              {/* Services, Alerts, Logs, API tokens and (for admins) Users
+                  all live under Settings now, as tabs of one management
+                  hub, rather than as separate entries here. */}
               <button
                 onClick={() => {
                   setOpen(false)
@@ -125,15 +81,6 @@ export default function UserMenu() {
                 className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
               >
                 Settings
-              </button>
-              <button
-                onClick={() => {
-                  setOpen(false)
-                  navigate('/tokens')
-                }}
-                className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
-              >
-                API tokens
               </button>
               <div className="border-t border-slate-800 pt-1 mt-1" />
               <div className="px-2 pt-1 pb-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">User</div>

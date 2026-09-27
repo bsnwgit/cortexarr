@@ -293,8 +293,18 @@ class CreateUserArgs(BaseModel):
 
 class UpdateUserArgs(BaseModel):
     user_id: int
+    email: Optional[EmailStr] = None
     role: Optional[Literal["admin", "analyst", "viewer"]] = None
     is_active: Optional[bool] = None
+
+
+class ResetPasswordArgs(BaseModel):
+    user_id: int
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+class DeleteUserArgs(BaseModel):
+    user_id: int
 
 
 # ---------------------------------------------------------------------------
@@ -537,12 +547,21 @@ TOOLS: list[Tool] = [
     Tool("create_user", "Add a Cortexarr user.",
          CreateUserArgs, lambda db, u, a: users_api.create_user(users_api.CreateUser(**a.model_dump()), u, db),
          min_role="admin", kind="write"),
-    Tool("update_user", "Change a user's role, or deactivate/reactivate them.",
+    Tool("update_user", "Change a user's email or role, or deactivate/reactivate them. Refused if it would leave "
+                        "no active admin.",
          UpdateUserArgs,
-         lambda db, u, a: users_api.update_user(a.user_id, users_api.UpdateUser(role=a.role, is_active=a.is_active), u, db),
+         lambda db, u, a: users_api.update_user(
+             a.user_id, users_api.UpdateUser(email=a.email, role=a.role, is_active=a.is_active), u, db),
+         min_role="admin", kind="write"),
+    Tool("reset_user_password", "Set a new password for a user who forgot theirs — no current password needed.",
+         ResetPasswordArgs,
+         lambda db, u, a: users_api.reset_user_password(a.user_id, users_api.ResetPassword(new_password=a.new_password), u, db),
          min_role="admin", kind="write"),
 
     # -- Destructive ------------------------------------------------------------
+    Tool("delete_user", "Delete a Cortexarr user. Refused if it would leave no active admin.",
+         DeleteUserArgs, lambda db, u, a: users_api.delete_user(a.user_id, u, db),
+         min_role="admin", kind="destructive"),
     Tool("delete_service", "Stop monitoring a service and delete its configuration and health history.",
          ServiceArg, lambda db, u, a: svc.delete_service(a.service_id, u, db),
          min_role="admin", kind="destructive"),

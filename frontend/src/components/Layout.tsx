@@ -12,6 +12,7 @@ import { setTimeZone } from '../utils/time'
 const TABS = [
   { to: '/', label: 'Dashboard' },
   { to: '/tracking', label: 'Tracking' },
+  { to: '/alerts', label: 'Notifications' },
 ]
 
 export default function Layout() {

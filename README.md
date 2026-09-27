@@ -34,15 +34,17 @@ leaving the page.
 - **Dashboard** — requests run full width across the top; below, one card
   per service with nested cards for whatever needs attention. Each card can
   be refreshed on its own or opened in the service's own web UI.
-- **Logs** — one activity feed across every service (filterable by
-  pipeline), plus an audit log of every change made in Cortexarr.
+- **Notifications** — a top-nav tab, next to Tracking, with three views:
+  Alerts (below), an activity feed across every service (filterable by
+  pipeline), and an audit log of every change made in Cortexarr.
 - **MCP server** — AI tools (any MCP client) can do everything the web UI
   does, through personal API tokens that are read-only by default and never
   delete anything unless you allow it.
 - Per-service health polling with retry/backoff, a connection test that
   also checks the URL really is the service you picked, role-based access
-  (admin / analyst / viewer), and notifications over email, Slack/Discord
-  webhooks, ntfy push, and Twilio SMS.
+  (admin / analyst / viewer) with a **Users** page to manage them, and
+  notifications over email, Slack/Discord webhooks, ntfy push, and Twilio
+  SMS.
 - **Alerts** — your own rules for what notifies: a service unreachable or
   reporting an error, a queue item stuck, a download failed, a request
   failed or an issue reported — on which services, after how long, through
@@ -55,7 +57,6 @@ leaving the page.
 
 Planned but not built yet — kept here so none of it gets lost:
 
-- **User management page** — users are managed through the API for now.
 - **Mass filtering at series level** — filter the series library by state
   (e.g. series with missing episodes) and select the matching series to act
   on together.
@@ -123,12 +124,13 @@ remove that too).
 1. Open Cortexarr in a browser and sign in as `admin` with the password the
    installer printed. Change it from the user menu (your username, top
    right).
-2. From the same menu, under **Services**, choose **Add service**. Pick the type, enter its URL
-   and API key (NZBGet asks for its username and password instead), and
-   **Test connection** before saving.
+2. From the same menu, open **Settings → Services** and choose **New
+   service**. Pick the type, enter its URL and API key (NZBGet asks for
+   its username and password instead), and **Test connection** before
+   saving.
 3. Repeat for each service you run. The Dashboard fills in as they're
-   checked. **Manage services** in the same menu lists them, with test,
-   maintenance mode, and delete.
+   checked. **Settings → Services** lists them, with test, maintenance
+   mode, and delete.
 
 The [User Guide](docs/USER_GUIDE.md) walks through each page; the
 [Admin Guide](docs/ADMIN_GUIDE.md) covers adding services, maintenance

@@ -1,21 +1,23 @@
 import { useState } from 'react'
 import clsx from 'clsx'
+import Alerts from './Alerts'
 import ActivityFeed from '../components/ActivityFeed'
 import Audit from './Audit'
 
 const TABS = [
+  { key: 'alerts', label: 'Alerts' },
   { key: 'activities', label: 'Activities' },
   { key: 'audit', label: 'Audit Log' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
-// Logs — everything that gets recorded but isn't config: what the
-// services themselves did (Activities, pulled from their own history) and
-// what a user changed in Cortexarr (Audit Log). Two different kinds of
-// "log", one section.
-export default function Logs() {
-  const [tab, setTab] = useState<TabKey>('activities')
+// Everything about what's happening and what's gone wrong, one page: your
+// alert rules and current problems, the cross-service activity feed, and
+// the config-change audit log. Was two separate top-nav destinations
+// (Alerts, and Logs with its own Activities/Audit Log split) — now one.
+export default function Notifications() {
+  const [tab, setTab] = useState<TabKey>('alerts')
 
   return (
     <div>
@@ -36,7 +38,7 @@ export default function Logs() {
         ))}
       </div>
 
-      {tab === 'activities' ? <ActivityFeed limit={200} /> : <Audit />}
+      {tab === 'alerts' ? <Alerts /> : tab === 'activities' ? <ActivityFeed limit={200} /> : <Audit />}
     </div>
   )
 }
