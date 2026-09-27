@@ -28,7 +28,8 @@ leaving the page.
   progress and post-processing stage, and history with failure reasons and
   **Retry**. Pause/resume a download or everything at once.
 - **Dashboard** — requests run full width across the top; below, one card
-  per service with nested cards for whatever needs attention.
+  per service with nested cards for whatever needs attention. Each card can
+  be refreshed on its own or opened in the service's own web UI.
 - **Logs** — one activity feed across every service (filterable by
   pipeline), plus an audit log of every change made in Cortexarr.
 - Per-service health polling with retry/backoff, a connection test that
@@ -112,11 +113,12 @@ remove that too).
 1. Open Cortexarr in a browser and sign in as `admin` with the password the
    installer printed. Change it from the user menu (your username, top
    right).
-2. From the same menu, choose **Add service**. Pick the type, enter its URL
+2. From the same menu, under **Services**, choose **Add service**. Pick the type, enter its URL
    and API key (NZBGet asks for its username and password instead), and
    **Test connection** before saving.
 3. Repeat for each service you run. The Dashboard fills in as they're
-   checked.
+   checked. **Manage services** in the same menu lists them, with test,
+   maintenance mode, and delete.
 
 The [User Guide](docs/USER_GUIDE.md) walks through each page; the
 [Admin Guide](docs/ADMIN_GUIDE.md) covers adding services, maintenance
