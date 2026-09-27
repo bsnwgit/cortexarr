@@ -106,6 +106,15 @@ export default function UserMenu() {
                 Settings
               </button>
               <button
+                onClick={() => {
+                  setOpen(false)
+                  navigate('/tokens')
+                }}
+                className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
+              >
+                API tokens
+              </button>
+              <button
                 onClick={() => setChangingPassword(true)}
                 className="w-full text-left rounded-lg px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-900"
               >

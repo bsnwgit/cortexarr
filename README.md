@@ -32,6 +32,9 @@ leaving the page.
   be refreshed on its own or opened in the service's own web UI.
 - **Logs** — one activity feed across every service (filterable by
   pipeline), plus an audit log of every change made in Cortexarr.
+- **MCP server** — AI tools (any MCP client) can do everything the web UI
+  does, through personal API tokens that are read-only by default and never
+  delete anything unless you allow it.
 - Per-service health polling with retry/backoff, a connection test that
   also checks the URL really is the service you picked, role-based access
   (admin / analyst / viewer), and notifications over email, Slack/Discord
@@ -55,13 +58,11 @@ Planned but not built yet — kept here so none of it gets lost:
 - **Per-user notification preferences page** — supported by the API, no
   page in the UI yet.
 - **User management page** — users are managed through the API for now.
-- **Link to the real app from each dashboard card** — a small icon on every
-  pipeline card that opens that service's own web UI.
 - **Push instead of poll** — accept Sonarr/Radarr webhooks rather than only
   polling them.
 - **History and trends** — reporting over time, beyond the live views.
-- **MCP server and AI provider integration** — everything the web UI does,
-  available to AI agents; pluggable AI providers.
+- **AI provider integration** — pluggable AI providers inside Cortexarr
+  itself (the MCP server for outside AI tools is built).
 - **Config export / import** — back up or move the service list and
   settings (credentials excluded unless you choose to include them).
 - **Self-update** — manual or automatic updates from GitHub releases, within

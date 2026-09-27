@@ -58,6 +58,25 @@ features* in the README); the channels themselves are live.
 
 Manage users via `/api/users` (a dedicated admin page is planned).
 
+## MCP server and API tokens
+
+Cortexarr serves MCP (streamable HTTP) at `/mcp`, on the same port as the
+web UI. Every tool is a web-UI action, run through the same code with the
+same checks, so there's nothing an AI tool can do that its token's owner
+couldn't do by hand. How users make tokens is in the
+[User Guide](USER_GUIDE.md#api-tokens-and-ai-tools).
+
+- An admin's **API tokens** page lists every user's tokens and can revoke
+  any of them — a leaked token has to be stoppable by someone other than
+  its owner.
+- Only admins can make write tokens, or tokens that allow destructive tools.
+- Only a hash of each token is stored; a lost token is revoked and remade,
+  not recovered.
+- Requests from a web page on another site (a foreign `Origin` header) are
+  refused.
+- If Cortexarr sits behind a reverse proxy, forward `/mcp` as well as `/`
+  and `/api`.
+
 ## Audit log
 
 Every change made in Cortexarr — services added or changed, monitor
