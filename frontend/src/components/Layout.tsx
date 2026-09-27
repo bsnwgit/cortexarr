@@ -8,7 +8,6 @@ import CortexarrLogo from './icons/CortexarrLogo'
 // memory — with Cortexarr's own violet/teal palette instead of pkt*'s gold.
 const TABS = [
   { to: '/', label: 'Dashboard' },
-  { to: '/services', label: 'Services' },
   { to: '/logs', label: 'Logs' },
 ]
 
