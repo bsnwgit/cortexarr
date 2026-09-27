@@ -34,7 +34,7 @@ __all__ = [
     "get_queue", "get_wanted_missing", "get_calendar", "get_movies", "get_history",
     "get_movie_detail", "get_movie_history",
     "set_movie_monitored", "search_movie", "delete_movie_file", "delete_movie",
-    "remove_queue_item", "import_queue_item",
+    "remove_queue_item", "import_queue_item", "get_movies_progress",
 ]
 
 _APP = "Radarr"
@@ -140,6 +140,7 @@ async def get_queue(base_url: str, api_key: str, page_size: int = 50) -> list[di
             "download_client": r.get("downloadClient"),
             "messages": messages,
             "download_id": r.get("downloadId"),
+            "added": r.get("added"),
         })
     return out
 
@@ -331,3 +332,14 @@ async def import_queue_item(base_url: str, api_key: str, queue_id: int) -> int:
         files.append({**arr_http.import_file(item), "movieId": movie_id})
     await arr_http.manual_import(_APP, base_url, api_key, files)
     return len(files)
+
+
+async def get_movies_progress(base_url: str, api_key: str) -> list[dict[str, Any]]:
+    """Every movie with whether it's on disk and released — what request
+    tracking (app/tracking.py) needs, in one call for the whole library."""
+    data = await _get(base_url, api_key, "/api/v3/movie")
+    return [
+        {"id": m.get("id"), "title": m.get("title", ""), "tmdb_id": m.get("tmdbId"), "added": m.get("added"),
+         "has_file": bool(m.get("hasFile")), "is_available": bool(m.get("isAvailable"))}
+        for m in (data if isinstance(data, list) else [])
+    ]

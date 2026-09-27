@@ -3,9 +3,11 @@
 ## Your account
 
 Click your username in the top-right corner for **Services** (the list of
-monitored services), **Alerts** (current problems, the alert rules, and
-what's been sent — see the [Admin Guide](ADMIN_GUIDE.md#alert-rules)),
-**Settings**, **API tokens**, **Change password**, and **Log out**.
+monitored services); under **Monitoring**, **Alerts** (current problems,
+the alert rules, and what's been sent — see the
+[Admin Guide](ADMIN_GUIDE.md#alert-rules)) and **Logs**; then **Settings**
+and **API tokens**; and under **User**, **My notifications**, **Change
+password**, and **Log out**.
 Admins also see **Add service** under Services (see the
 [Admin Guide](ADMIN_GUIDE.md)).
 
@@ -46,6 +48,34 @@ Beside the status, the refresh icon reloads just that card now rather than
 waiting for its next update, and the arrow icon opens the service's own web
 UI in a new tab. Click anywhere else on a card to open that service's page.
 
+## Tracking
+
+**Tracking** (top of the page) follows every Seerr request through the
+pipeline: *Waiting for approval → Sending to Sonarr/Radarr → Searching →
+Downloading → Importing → Available*. The current stage is lit, with how
+long the request has been in it — measured from when it really got there
+(requested, approved, added to Sonarr/Radarr, download started), not from
+when Cortexarr noticed. TV requests show how many of the requested seasons'
+aired episodes are on disk.
+
+A title that isn't released yet shows as *Not released yet* rather than
+searching; a request Seerr failed to send shows as *Failed in Seerr* (see
+Alerts for why).
+
+The dropdown at the top right filters the list — **In progress** (the default),
+**All**, each stage, *Not released yet*, *Failed in Seerr* — each with its
+count; the filter is kept in the page address, so a view can be bookmarked.
+
+Click a request to go straight to it where it's at in the pipeline:
+waiting for approval opens Seerr's pending requests; downloading or
+importing opens Sonarr/Radarr's Downloading tab filtered to that title;
+searching (or available) opens the series — at the first requested season —
+or the movie; failed opens Seerr's Issues, with the reason.
+
+To be told when a request sits in one stage too long, add a *Request …*
+alert rule (Admin Guide → Alert rules) — its "for at least" is that stage's
+threshold.
+
 ## Service pages
 
 The refresh icon at the right of a service page's header reloads that page
@@ -64,8 +94,12 @@ confirm.
   continuing / ended. Open a series for its seasons (newest first, Specials
   last): monitor a whole series or season, search a season, see its
   history, and open a season for its episodes — each with its own monitor
-  toggle, a search button when it's missing, or delete-file when it's
+  toggle, a search button when it's missing (it spins while Sonarr searches,
+  then shows what Sonarr found), or delete-file when it's
   there. An *Upcoming* episode opens the series calendar at its month.
+  On a series page, click its *episodes* pill (e.g. "292 / 303 episodes") to
+  show only missing episodes, again for only downloaded ones, and again for
+  everything.
 - **Downloading** — the queue (with why an item is stuck, if it is) and
   recent history.
 - **Missing** — aired episodes with no file, grouped by series; each links
@@ -131,6 +165,8 @@ estimated time), free disk space, anything post-processing, and **Pause all
 
 ## Logs
 
+User menu → *Monitoring* → **Logs**.
+
 ![Activity log](images/activity-log.png)
 
 - **Activities** — one feed across every service: what Sonarr and Radarr
@@ -142,10 +178,17 @@ estimated time), free disk space, anything post-processing, and **Pause all
 
 ## Notification preferences
 
-Per-user notification preferences (which channels *you* personally receive
-alerts through, independent of the instance-wide settings an admin
-configures) are supported by the API but don't have a settings page in the
-UI yet.
+User menu → *User* → **My notifications** is where *you* get alerts: your
+own email address, Slack/Discord webhook, ntfy topic, or phone number, each
+turned on or off separately. Alerts go to these as well as to the
+recipients an admin set under Settings; what triggers an alert is the
+rules under Alerts.
+
+A channel only works once an admin has set it up under Settings — the page
+says so when one isn't. Each address is checked when you save it (a real
+email address, an http(s) webhook URL, an ntfy topic name, a phone number
+in international format like +15551234567). **Send me a test** sends to
+your address only, not to anyone else's.
 
 ## API tokens and AI tools
 

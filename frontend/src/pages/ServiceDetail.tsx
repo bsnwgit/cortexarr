@@ -16,6 +16,7 @@ import DownloadOverview from '../components/DownloadOverview'
 import DownloadQueue from '../components/DownloadQueue'
 import DownloadHistory from '../components/DownloadHistory'
 import { getServiceAccent } from '../utils/serviceAccent'
+import PageSpinner from '../components/PageSpinner'
 
 interface Service {
   id: number
@@ -165,7 +166,7 @@ export default function ServiceDetail() {
           {seriesError ? (
             <p className="text-red-300 text-sm py-6 text-center">{seriesError}</p>
           ) : seriesLoading && series.length === 0 ? (
-            <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+            <PageSpinner className="py-6" />
           ) : (
             <SeriesLibraryList serviceId={id ?? ''} accent={accent} series={series} />
           )}

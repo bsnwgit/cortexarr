@@ -440,12 +440,27 @@ async def trigger_episode_search(
     row, client = await _get_service_and_client(service_id, db)
     api_key = decrypt_str(row["api_key_enc"])
     try:
-        await _client_fn(row, client, "search_episode")(row["base_url"], api_key, episode_id)
+        command_id = await _client_fn(row, client, "search_episode")(row["base_url"], api_key, episode_id)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="episode.search", target_type="service_instance",
                         target_id=service_id, detail={"episode_id": episode_id})
-    return {"ok": True}
+    # The search itself runs in Sonarr; the id lets the page follow it.
+    return {"ok": True, "command_id": command_id}
+
+
+@router.get("/{service_id}/commands/{command_id}")
+async def command_status(
+    service_id: int, command_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """How a search started from here is going — polled by the episode
+    search button so it spins until Sonarr has actually finished."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        return await _client_fn(row, client, "get_command")(row["base_url"], api_key, command_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.delete("/{service_id}/episodefiles/{episode_file_id}")
@@ -619,10 +634,14 @@ async def delete_movie_route(
 
 
 # ---------------------------------------------------------------------------
-# Requests (Seerr) — approve/decline a pending request, retry a failed one.
+# Requests (Seerr) — approve/decline a pending request, retry a failed one,
+# clear one outright (any status — the Alerts page's fix for a stalled
+# request nobody wants any more).
 # ---------------------------------------------------------------------------
 
-_REQUEST_ACTIONS = {"approve": "approve_request", "decline": "decline_request", "retry": "retry_request"}
+_REQUEST_ACTIONS = {
+    "approve": "approve_request", "decline": "decline_request", "retry": "retry_request", "clear": "delete_request",
+}
 
 
 @router.post("/{service_id}/requests/{request_id}/{action}")
@@ -630,8 +649,9 @@ async def request_action(
     service_id: int, request_id: int, action: str, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
 ):
     """The Requests tab's Approve/Decline (pending requests only — the UI
-    only offers them there, and Seerr refuses them otherwise) and Retry
-    (failed requests)."""
+    only offers them there, and Seerr refuses them otherwise), Retry
+    (failed requests), and Clear (deletes the request from Seerr, any
+    status)."""
     fn_name = _REQUEST_ACTIONS.get(action)
     if not fn_name:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown action: {action}")

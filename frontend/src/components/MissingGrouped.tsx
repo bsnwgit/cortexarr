@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client'
 import MonitoredToggle from './MonitoredToggle'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtDateOnly } from '../utils/time'
+import PageSpinner from './PageSpinner'
 
 interface WantedItem {
   id: number
@@ -94,7 +95,7 @@ export default function MissingGrouped({ serviceId, accent }: { serviceId: strin
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading && rows.length === 0 ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : grouped.length === 0 ? (
         <p className="text-slate-500 text-sm py-6 text-center">No missing episodes.</p>
       ) : (

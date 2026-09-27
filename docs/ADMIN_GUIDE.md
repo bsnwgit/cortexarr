@@ -63,6 +63,13 @@ rule**. A rule is:
     failed (e.g. "not enough free space").
   - *Download failed* — NZBGet/SABnzbd.
   - *Request failed or issue reported* — Seerr.
+  - *Request waiting for approval* / *not in Sonarr/Radarr* / *still
+    searching* / *still downloading* / *stuck importing* — a Seerr request
+    that has sat in that stage of the pipeline (see Tracking in the User
+    Guide). One rule per stage you care about gives each stage its own
+    threshold, measured from when the request really entered it. Fixes
+    offered: **Approve** while waiting for approval, **Search now** while
+    searching.
 - **On** — every service, or one.
 - **For at least** — how many minutes it must last before alerting; 0
   alerts on the first check that sees it. Checks run at each service's
@@ -101,6 +108,14 @@ only; each is in the audit log):
   you to type `Delete` first.
 - **Retry download** / **Retry request** — a failed NZBGet/SABnzbd download,
   or a failed Seerr request.
+- **Search now** — while a request is searching, ask Sonarr/Radarr to look
+  again now rather than wait for its own schedule.
+- **Clear** — deletes a Seerr request outright, whatever its status. For a
+  request stalled at any stage that you don't want any more — the title
+  was deleted, say, so Seerr never learns to stop tracking it. Offered on
+  every "Request …" stalled problem and on a request Seerr failed to send.
+  Asks you to type `Delete` first; there's no undo but the requester can
+  always ask again.
 - **Test connection** — for an unreachable service; says whether it's the
   network or the key.
 
@@ -112,8 +127,21 @@ check.
 problems with exactly the same fixes can be selected together — once one is
 ticked, the others grey out — so one action means the same thing for every
 one. **Select all that fix the same way** picks a whole group in one click
-(e.g. every "Import it" problem). Several stuck episodes from one download
-(a season pack) are handled once, and each problem shows how its fix went.
+(e.g. every "Import it" problem) and hides everything else, so it's just
+that group to review; click the same pill again, or **Show all**, to bring
+the rest back. Several stuck episodes from one download (a season pack)
+are handled once, and each problem shows how its fix went.
+
+### Digests
+
+**Settings → General → Alert digest window** limits each channel to one
+message every so many minutes. The first alert after a quiet spell still
+goes out straight away; anything that fires within the window after it
+waits and goes out together as one digest when the window ends. **0** (the
+default) sends every alert as it happens. A rule's **Send test** is never
+held back. On the Alerts page, held alerts show as *queued* and each digest
+is listed when it's sent; a digest that fails to send is retried at the
+next window.
 
 ### Snooze and acknowledge
 
@@ -165,4 +193,4 @@ couldn't do by hand. How users make tokens is in the
 
 Every change made in Cortexarr — services added or changed, monitor
 toggles, searches, deletes, approvals, retries, pauses, settings — is
-recorded under **Logs → Audit Log** with who did it and when.
+recorded under **Logs → Audit Log** (user menu → *Monitoring*) with who did it and when.

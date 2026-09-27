@@ -5,6 +5,7 @@ import DataTable, { type Column } from './DataTable'
 import ServiceIcon from './ServiceIcon'
 import { getServiceAccent } from '../utils/serviceAccent'
 import { fmtDateTime } from '../utils/time'
+import PageSpinner from './PageSpinner'
 
 interface Service {
   id: number
@@ -138,7 +139,7 @@ export default function ActivityFeed({ limit = 50 }: { limit?: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit])
 
-  if (loading) return <p className="text-slate-500 text-sm">Loading…</p>
+  if (loading) return <PageSpinner />
   if (error) return <p className="text-red-300 text-sm">{error}</p>
   if (hasServices === false) {
     return (

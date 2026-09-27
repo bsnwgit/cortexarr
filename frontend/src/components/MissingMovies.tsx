@@ -6,6 +6,7 @@ import MonitoredToggle from './MonitoredToggle'
 import { SearchIcon } from './icons/UiIcons'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtDay, movieStatusLabel } from '../utils/movieFormat'
+import PageSpinner from './PageSpinner'
 
 interface MissingMovie {
   id: number
@@ -142,7 +143,7 @@ export default function MissingMovies({ serviceId, accent }: { serviceId: string
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : (
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} emptyMessage="No missing movies." />
       )}

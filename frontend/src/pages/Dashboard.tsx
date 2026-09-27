@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import ServiceCard, { type DashboardService } from '../components/ServiceCard'
+import PageSpinner from '../components/PageSpinner'
 
 const FULL_WIDTH_TYPES = new Set(['seerr'])
 
@@ -36,7 +37,7 @@ export default function Dashboard() {
       <h2 className="text-lg font-semibold text-slate-100 mb-4">Pipeline</h2>
 
       {loading ? (
-        <p className="text-slate-500 text-sm">Loading…</p>
+        <PageSpinner />
       ) : services.length === 0 ? (
         <p className="text-slate-500 text-sm">
           No services configured yet — <Link to="/services?add=1" className="underline hover:text-slate-300">add one</Link>.

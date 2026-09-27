@@ -1,4 +1,5 @@
 import { fmtDateTime } from '../utils/time'
+import PageSpinner from './PageSpinner'
 interface HistoryRow {
   id: number
   event_type: string
@@ -41,7 +42,7 @@ export default function HistoryModal({
         </div>
         <div className="overflow-y-auto p-4">
           {loading ? (
-            <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+            <PageSpinner className="py-6" />
           ) : rows.length === 0 ? (
             <p className="text-slate-500 text-sm py-6 text-center">{emptyMessage}</p>
           ) : (

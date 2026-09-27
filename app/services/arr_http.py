@@ -183,6 +183,14 @@ async def manual_import(app: str, base_url: str, api_key: str, files: list[dict[
     await post(app, base_url, api_key, "/api/v3/command", {"name": "ManualImport", "importMode": "auto", "files": files})
 
 
+async def command_status(app: str, base_url: str, api_key: str, command_id: int) -> dict[str, Any]:
+    """Where a command (a search, an import) the app is running has got to —
+    status is queued / started / completed / failed / aborted / cancelled."""
+    c = await get(app, base_url, api_key, f"/api/v3/command/{command_id}")
+    return {"id": c.get("id"), "name": c.get("name"), "status": c.get("status"),
+            "result": c.get("result"), "message": c.get("message") or ""}
+
+
 def import_file(item: dict[str, Any]) -> dict[str, Any]:
     """The fields both apps' ManualImportFile shares, from a manualimport preview row."""
     return {

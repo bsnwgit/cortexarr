@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { allTimeZones, setTimeZone } from '../utils/time'
+import { resultText } from '../utils/notifyResult'
+import PageSpinner from '../components/PageSpinner'
 
 type Settings = Record<string, any>
 
@@ -35,13 +37,20 @@ export default function SettingsPage() {
     }
   }
 
+  // The test is sent with the saved settings, so save first — otherwise a
+  // channel just switched on and filled in reads as "not enabled".
   async function test(channel: string) {
-    setTestStatus((s) => ({ ...s, [channel]: 'testing' }))
-    const result = await api.post<{ status: string; detail: string }>('/settings/test-notification', { channel })
-    setTestStatus((s) => ({ ...s, [channel]: `${result.status}: ${result.detail}` }))
+    setTestStatus((s) => ({ ...s, [channel]: 'Saving and sending…' }))
+    try {
+      await api.post('/settings/bulk', settings)
+      const result = await api.post<{ status: string; detail: string }>('/settings/test-notification', { channel })
+      setTestStatus((s) => ({ ...s, [channel]: resultText(result) }))
+    } catch (err) {
+      setTestStatus((s) => ({ ...s, [channel]: `✗ ${err instanceof ApiError ? err.message : "Couldn't save the settings"}` }))
+    }
   }
 
-  if (loading) return <p className="text-slate-500 text-sm">Loading…</p>
+  if (loading) return <PageSpinner />
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -101,7 +110,7 @@ export default function SettingsPage() {
             ))}
           </select>
         </Row>
-        <Row label="Notification batching window (minutes, 0 = immediate)">
+        <Row label="Alert digest window (minutes) — at most one message per channel this often; 0 sends each alert at once">
           <input className="input" type="number" min={0} value={settings.notify_batch_window_minutes ?? 0} onChange={(e) => set('notify_batch_window_minutes', Number(e.target.value))} />
         </Row>
         <Row label="Health-check history retention (days)">
@@ -144,7 +153,11 @@ function Section({ title, enabled, onToggle, onTest, testStatus, children }: {
         <button onClick={onTest} disabled={!enabled} className="btn-secondary">Send test</button>
       </div>
       {enabled && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>}
-      {testStatus && <p className="text-xs text-slate-400">{testStatus}</p>}
+      {testStatus && (
+        <p className={`text-sm ${testStatus.startsWith('✓') ? 'text-teal-300' : testStatus.startsWith('✗') ? 'text-red-300' : 'text-slate-300'}`}>
+          {testStatus}
+        </p>
+      )}
     </div>
   )
 }

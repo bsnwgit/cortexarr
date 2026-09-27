@@ -124,6 +124,10 @@ async def run_forever() -> None:
                     await alerts.forget_paused(db)
                 except Exception:
                     log.exception("Alert cleanup for paused services failed")
+                try:
+                    await alerts.flush_digests(db)
+                except Exception:
+                    log.exception("Sending alert digests failed")
 
                 now = time.time()
                 for service in services:

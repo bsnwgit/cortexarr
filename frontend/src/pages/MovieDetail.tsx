@@ -8,6 +8,7 @@ import HistoryModal from '../components/HistoryModal'
 import { HistoryIcon, SearchIcon, TrashIcon } from '../components/icons/UiIcons'
 import { getServiceAccent } from '../utils/serviceAccent'
 import { fmtBytes, fmtDay, fmtRuntime, movieAvailability, movieStatusLabel } from '../utils/movieFormat'
+import PageSpinner from '../components/PageSpinner'
 
 interface MovieFile {
   id: number
@@ -191,7 +192,7 @@ export default function MovieDetail() {
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : movie ? (
         <>
           {/* Header: fanart banner + title/metadata overlay. The art sits

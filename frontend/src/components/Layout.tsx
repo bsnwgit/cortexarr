@@ -11,7 +11,7 @@ import { setTimeZone } from '../utils/time'
 // memory — with Cortexarr's own violet/teal palette instead of pkt*'s gold.
 const TABS = [
   { to: '/', label: 'Dashboard' },
-  { to: '/logs', label: 'Logs' },
+  { to: '/tracking', label: 'Tracking' },
 ]
 
 export default function Layout() {

@@ -21,6 +21,10 @@ Two kinds of event:
 All of a rule's new matches from one check go out as one message, so a bad
 night is one alert per rule, not one per item.
 
+A Seerr service's conditions also include each request sitting in a pipeline
+stage (app/tracking.py), as stalled_<stage> dated from when it entered that
+stage — so a rule's threshold is that stage's stall threshold.
+
 A rule can remind every N minutes while a problem lasts. A snoozed problem
 (app/api/alerts.py) sends nothing — no alert, no reminder — until the
 snooze ends; acknowledged means snoozed until it clears.
@@ -41,7 +45,9 @@ from app.services.errors import ConnectivityError, ServiceApiError
 
 log = logging.getLogger("cortexarr.alerts")
 
-STATE_EVENTS = ("unreachable", "error", "warning", "stuck")
+STATE_EVENTS = ("unreachable", "error", "warning", "stuck",
+                # A Seerr request sitting in one stage too long (app/tracking.py).
+                "stalled_approval", "stalled_sending", "stalled_searching", "stalled_downloading", "stalled_importing")
 ONESHOT_EVENTS = ("download_failed", "request_issue")
 EVENTS = STATE_EVENTS + ONESHOT_EVENTS
 
@@ -52,6 +58,11 @@ EVENT_LABELS = {
     "stuck": "item stuck in the queue",
     "download_failed": "download failed",
     "request_issue": "request failed or issue reported",
+    "stalled_approval": "request waiting for approval",
+    "stalled_sending": "request not in Sonarr/Radarr yet",
+    "stalled_searching": "request still searching",
+    "stalled_downloading": "request still downloading",
+    "stalled_importing": "request stuck importing",
 }
 
 # Same test as the dashboard cards' isStuck.
@@ -67,6 +78,9 @@ class Condition:
     event: str
     title: str
     detail: str = ""
+    # When it really started, if the service says (e.g. when a request was
+    # approved) — otherwise it counts from when Cortexarr first saw it.
+    since: Optional[str] = None
 
 
 def _parse(ts: Any) -> Optional[datetime]:
@@ -132,6 +146,33 @@ async def _item_conditions(service: aiosqlite.Row, api_key: str, baseline: datet
     return out
 
 
+async def _stalled_conditions(db: aiosqlite.Connection, seerr_id: int) -> Optional[list[Condition]]:
+    """Every request of this Seerr in a stage it could stall in, dated from
+    when it entered that stage. The key carries the stage, so moving on
+    clears it. None when Sonarr/Radarr couldn't all be read — a request we
+    can't see isn't one that moved on."""
+    from app import tracking
+
+    result = await tracking.track(db, seerr_id)
+    if result["errors"]:
+        log.info("request tracking incomplete for Seerr %s: %s", seerr_id, "; ".join(result["errors"]))
+        return None
+    out = []
+    for t in result["requests"]:
+        if t["stage"] not in tracking.STALLABLE:
+            continue
+        name = t["title"] + (f" ({t['year']})" if t.get("year") else "")
+        progress = t.get("progress")
+        detail = "; ".join(x for x in (
+            f"{progress['have']} of {progress['of']} episodes" if progress else "",
+            t.get("detail") or "",
+            f"requested by {t['requested_by']}" if t.get("requested_by") else "",
+        ) if x)
+        out.append(Condition(f"track:{t['request_id']}:{t['stage']}", f"stalled_{t['stage']}",
+                             f"{name} — {tracking.STAGE_LABELS[t['stage']].lower()}", detail, t.get("since")))
+    return out
+
+
 async def _reconcile(db: aiosqlite.Connection, sid: int, prefix: str, now: list[Condition]) -> list[aiosqlite.Row]:
     """Record the group's current conditions; return the rows that cleared."""
     async with db.execute(
@@ -147,10 +188,12 @@ async def _reconcile(db: aiosqlite.Connection, sid: int, prefix: str, now: list[
                 (c.event, c.title[:500], c.detail[:2000], stamp, sid, c.key),
             )
         else:
+            started = _parse(c.since)
+            first = started.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if started else stamp
             await db.execute(
                 "INSERT INTO alert_conditions (service_instance_id, key, event, title, detail, first_seen, last_seen) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (sid, c.key, c.event, c.title[:500], c.detail[:2000], stamp, stamp),
+                (sid, c.key, c.event, c.title[:500], c.detail[:2000], min(first, stamp), stamp),
             )
     current = {c.key for c in now}
     cleared = [row for key, row in existing.items() if key not in current]
@@ -182,6 +225,16 @@ async def _stamp(db: aiosqlite.Connection) -> str:
     except (ZoneInfoNotFoundError, ValueError):
         zone = timezone.utc
     return datetime.now(zone).strftime("%Y-%m-%d %H:%M %Z")
+
+
+async def _window(db: aiosqlite.Connection) -> int:
+    """The digest window in minutes (scope #12); 0 sends every alert at once."""
+    async with db.execute("SELECT value FROM settings WHERE key = 'notify_batch_window_minutes'") as cur:
+        row = await cur.fetchone()
+    try:
+        return max(0, int(json.loads(row[0]))) if row else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def _message(service_name: str, event: str, kind: str, lines: list[tuple[str, str]], stamp: str = "") -> Message:
@@ -259,13 +312,19 @@ async def process(db: aiosqlite.Connection, service: aiosqlite.Row, api_key: str
             items = await _item_conditions(service, api_key, baseline)
         except (ConnectivityError, ServiceApiError) as exc:
             log.info("alert item scan skipped for service %s: %s", sid, exc)
+    stalled: Optional[list[Condition]] = None
+    if connectivity_ok and service["type"] == "seerr":
+        stalled = await _stalled_conditions(db, sid)
     stamp = await _stamp(db)
+    window = await _window(db)
 
     # 2. One short write: record what's wrong now, work out what to send.
     cleared = await _reconcile(db, sid, "health:", _health_conditions(service, status, summary))
     if items is not None:
         for prefix in ("stuck:", "failed:", "issue:"):
             cleared += await _reconcile(db, sid, prefix, [c for c in items if c.key.startswith(prefix)])
+    if stalled is not None:
+        cleared += await _reconcile(db, sid, "track:", stalled)
 
     async with db.execute(
         "SELECT * FROM alert_rules WHERE enabled = 1 AND (service_id IS NULL OR service_id = ?)", (sid,),
@@ -324,20 +383,81 @@ async def process(db: aiosqlite.Connection, service: aiosqlite.Row, api_key: str
         notified += [(rule["id"], sid, r["key"], now) for r in due]
     await db.commit()
 
-    # 3. Network again, outside any transaction: send.
+    # 3. Network again, outside any transaction: send — or, with a digest
+    #    window set, leave it for flush_digests to send with the rest.
     sent = []
     for rule, kind, msg in outbox:
-        sent.append((rule, kind, msg, await send_all(db, rule, msg)))
+        if window:
+            results = {ch: {"status": "queued", "detail": "In the next digest"}
+                       for ch in json.loads(rule["channels"] or "[]") if ch in CHANNELS}
+        else:
+            results = await send_all(db, rule, msg)
+        sent.append((rule, kind, msg, results))
 
-    # 4. One short write: remember what went out.
+    # 4. One short write: remember what went out, or what's waiting to.
     for rule, kind, msg, results in sent:
         await log_sent(db, rule, sid, service["name"], rule["event"], kind, msg, results)
+        if window:
+            await db.executemany(
+                "INSERT INTO alert_outbox (channel, rule_name, service_name, subject, body) VALUES (?, ?, ?, ?, ?)",
+                [(ch, rule["name"], service["name"], msg.subject, msg.text) for ch in results],
+            )
     await db.executemany(
         "INSERT INTO alert_notified (rule_id, service_instance_id, key, sent_at) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(rule_id, service_instance_id, key) DO UPDATE SET sent_at = excluded.sent_at",
         notified,
     )
     await db.commit()
+
+
+def _digest(rows: list[aiosqlite.Row]) -> Message:
+    if len(rows) == 1:
+        r = rows[0]
+        return Message(subject=r["subject"], email_body=r["body"], title=r["subject"].removeprefix("[Cortexarr] "),
+                       text=r["body"])
+    # Each alert's body already opens with its own "<service>: <what>" line.
+    subject = f"[Cortexarr] {len(rows)} alerts"
+    text = "\n\n".join([f"Cortexarr — {len(rows)} alerts:", *(r["body"] for r in rows)])
+    return Message(subject=subject, email_body=text, title=subject.removeprefix("[Cortexarr] "), text=text)
+
+
+async def flush_digests(db: aiosqlite.Connection) -> None:
+    """Send each channel's waiting alerts as one message, at most once per
+    window. The first alert after a quiet spell goes at once (the window has
+    long passed); what follows inside the window waits for the next digest.
+    Called by the poller every tick."""
+    window = await _window(db)
+    async with db.execute("SELECT DISTINCT channel FROM alert_outbox") as cur:
+        channels = [r[0] for r in await cur.fetchall()]
+    now = datetime.now(timezone.utc)
+    for channel in channels:
+        async with db.execute("SELECT last_sent_at FROM alert_digest_state WHERE channel = ?", (channel,)) as cur:
+            row = await cur.fetchone()
+        last = _parse(row[0]) if row else None
+        # At most one digest per window; and a failed send, or leftovers after
+        # the window was set back to 0, retry no more than once a minute.
+        if last and now - last < timedelta(minutes=max(window, 1)):
+            continue
+        async with db.execute("SELECT * FROM alert_outbox WHERE channel = ? ORDER BY id", (channel,)) as cur:
+            rows = await cur.fetchall()
+        if not rows:
+            continue
+        msg = _digest(rows)
+        result = await send(db, channel, msg, await _targets(db, channel))   # no transaction open
+        if result["status"] != "failed":
+            # Sent, or the channel isn't set up any more — either way these are done.
+            await db.executemany("DELETE FROM alert_outbox WHERE id = ?", [(r["id"],) for r in rows])
+        await db.execute(
+            "INSERT INTO alert_digest_state (channel, last_sent_at) VALUES (?, ?) "
+            "ON CONFLICT(channel) DO UPDATE SET last_sent_at = excluded.last_sent_at",
+            (channel, _sql_now()),
+        )
+        await db.execute(
+            "INSERT INTO alert_log (rule_name, service_name, event, kind, subject, body, results) "
+            "VALUES ('', '', '', 'digest', ?, ?, ?)",
+            (msg.subject, msg.text, json.dumps({channel: result})),
+        )
+        await db.commit()
 
 
 async def forget_paused(db: aiosqlite.Connection) -> None:

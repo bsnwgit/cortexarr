@@ -36,7 +36,7 @@ __all__ = [
     "ConnectivityError", "ServiceApiError", "HealthResult",
     "test_connection", "check_health",
     "get_requests", "get_issues", "get_history",
-    "approve_request", "decline_request", "retry_request",
+    "approve_request", "decline_request", "retry_request", "delete_request",
 ]
 
 _APP = "Seerr"
@@ -44,6 +44,7 @@ _API = "/api/v1"
 
 _get = partial(arr_http.get, _APP)
 _post = partial(arr_http.post, _APP)
+_delete = partial(arr_http.delete, _APP)
 
 # server/constants/media.ts
 _REQ_PENDING, _REQ_APPROVED, _REQ_DECLINED, _REQ_FAILED, _REQ_COMPLETED = 1, 2, 3, 4, 5
@@ -203,6 +204,10 @@ async def get_requests(base_url: str, api_key: str, take: int = 100) -> list[dic
             "id": r.get("id"),
             "media_type": media_type,
             "tmdb_id": media.get("tmdbId"),
+            "tvdb_id": media.get("tvdbId"),
+            # The series/movie id in the Sonarr/Radarr Seerr sent it to — how
+            # request tracking tells an HD instance from a 4K one.
+            "external_id": media.get("externalServiceId4k") if r.get("is4k") else media.get("externalServiceId"),
             "title": m.get("title", ""),
             "year": m.get("year"),
             "poster_url": m.get("poster_url", ""),
@@ -409,3 +414,12 @@ async def decline_request(base_url: str, api_key: str, request_id: int) -> None:
 async def retry_request(base_url: str, api_key: str, request_id: int) -> None:
     """Re-send a failed request to its Sonarr/Radarr."""
     await _post(base_url, api_key, f"{_API}/request/{request_id}/retry", None)
+
+
+async def delete_request(base_url: str, api_key: str, request_id: int) -> None:
+    """Delete the request record itself, whatever its status — Seerr's own
+    permission check allows this for any status when the caller can manage
+    requests (which the API key always can). For "I don't want this any
+    more" — a title that was deleted, or a request stuck stalled with
+    nothing left to fix."""
+    await _delete(base_url, api_key, f"{_API}/request/{request_id}")

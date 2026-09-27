@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client'
 import DataTable, { type Column } from './DataTable'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtBytes, fmtWhen, OUTCOME_LABELS, outcomeClass, wrapName } from '../utils/downloadFormat'
+import PageSpinner from './PageSpinner'
 
 interface HistoryItem {
   id: number | string
@@ -125,7 +126,7 @@ export default function DownloadHistory({ serviceId, accent }: { serviceId: stri
       {error ? (
         <p className="text-red-300 text-sm py-6 text-center">{error}</p>
       ) : loading ? (
-        <p className="text-slate-500 text-sm py-6 text-center">Loading…</p>
+        <PageSpinner className="py-6" />
       ) : (
         <DataTable
           columns={columns}

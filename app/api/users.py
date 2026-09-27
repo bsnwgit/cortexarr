@@ -4,9 +4,12 @@ and admin user management.
 """
 from __future__ import annotations
 
+import re
+from urllib.parse import urlsplit
+
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, TypeAdapter, ValidationError
 
 from app import audit
 from app.auth.local import hash_password, password_problem, verify_password
@@ -50,10 +53,31 @@ async def change_password(body: ChangePassword, user: CurrentUser, db: aiosqlite
 class NotificationPref(BaseModel):
     channel: str  # 'email' | 'webhook' | 'ntfy' | 'sms'
     enabled: bool
-    target: str = ""
+    target: str = Field(default="", max_length=500)
 
 
 _VALID_CHANNELS = {"email", "webhook", "ntfy", "sms"}
+_NTFY_TOPIC = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_PHONE = re.compile(r"^\+[1-9]\d{6,14}$")
+
+
+def _target_problem(channel: str, target: str) -> str | None:
+    """Why a target can't be used for its channel, or None. Alerts are sent
+    to these, so they're checked here rather than failing at 3am."""
+    if channel == "email":
+        try:
+            TypeAdapter(EmailStr).validate_python(target)
+        except ValidationError:
+            return "That isn't an email address"
+    elif channel == "webhook":
+        parts = urlsplit(target)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            return "A webhook URL starts with http:// or https://"
+    elif channel == "ntfy" and not _NTFY_TOPIC.match(target):
+        return "An ntfy topic is letters, numbers, - and _ (up to 64)"
+    elif channel == "sms" and not _PHONE.match(target):
+        return "A phone number is in international format, e.g. +15551234567"
+    return None
 
 
 @router.get("/me/notifications")
@@ -69,14 +93,44 @@ async def get_my_notification_prefs(user: CurrentUser, db: aiosqlite.Connection 
 async def set_my_notification_pref(body: NotificationPref, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db)):
     if body.channel not in _VALID_CHANNELS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown channel: {body.channel}")
+    target = body.target.strip()
+    if body.enabled and not target:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter where to send it before turning it on")
+    problem = _target_problem(body.channel, target) if target else None
+    if problem:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=problem)
     await db.execute(
         "INSERT INTO user_notification_prefs (user_id, channel, enabled, target, updated_at) "
         "VALUES (?, ?, ?, ?, datetime('now')) "
         "ON CONFLICT(user_id, channel) DO UPDATE SET enabled=excluded.enabled, target=excluded.target, updated_at=excluded.updated_at",
-        (user["id"], body.channel, int(body.enabled), body.target),
+        (user["id"], body.channel, int(body.enabled), target),
     )
     await db.commit()
     return {"message": "Preference saved"}
+
+
+class MyTest(BaseModel):
+    channel: str
+
+
+@router.post("/me/notifications/test")
+async def test_my_notification(body: MyTest, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db)):
+    """Send a test to your own saved address for one channel — only to it,
+    not to the admin's default recipients."""
+    from app.notifications.sender import Message, send
+
+    if body.channel not in _VALID_CHANNELS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown channel: {body.channel}")
+    async with db.execute(
+        "SELECT target FROM user_notification_prefs WHERE user_id = ? AND channel = ?", (user["id"], body.channel),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or not row["target"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Save where to send it first")
+    text = f"Cortexarr test notification for {user['username']} — this is where your alerts will arrive."
+    return await send(db, body.channel, Message(
+        subject="[Cortexarr Test] Your notifications", email_body=text, title="Cortexarr Test", text=text,
+    ), [row["target"]], only_extra=True)
 
 
 # -- Admin user management --------------------------------------------------------
