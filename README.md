@@ -39,6 +39,12 @@ leaving the page.
   also checks the URL really is the service you picked, role-based access
   (admin / analyst / viewer), and notifications over email, Slack/Discord
   webhooks, ntfy push, and Twilio SMS.
+- **Alerts** — your own rules for what notifies: a service unreachable or
+  reporting an error, a queue item stuck, a download failed, a request
+  failed or an issue reported — on which services, after how long, through
+  which channels, with an optional "resolved" message when it clears and
+  reminders while it lasts. Snooze or acknowledge a known problem without
+  muting the whole rule.
 
 ## Requested features
 
@@ -47,12 +53,6 @@ Planned but not built yet — kept here so none of it gets lost:
 - **End-to-end request tracking** — follow one request from Seerr through
   Sonarr/Radarr, the download client, and import, and flag anything that
   stalls at a stage for longer than a threshold you set per stage.
-- **Alerts on real events** — rules for which problems notify, at what
-  threshold, through which channels. The channels (email, webhook, ntfy,
-  SMS) already send test messages; nothing triggers them from a detected
-  problem yet.
-- **Snooze / acknowledge** — silence a known problem without muting the
-  whole check.
 - **Notification digests** — batch alerts into one message per window. The
   setting exists; batching isn't wired up.
 - **Per-user notification preferences page** — supported by the API, no

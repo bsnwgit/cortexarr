@@ -1,3 +1,5 @@
+import { fmtDateTime } from './time'
+
 // Display helpers for download-client views (NZBGet, and any other client
 // that lands later).
 
@@ -36,7 +38,7 @@ export function wrapName(name: string) {
 export function fmtWhen(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateTime(d)
 }
 
 // History outcomes (the part of NZBGet's Status before the slash).

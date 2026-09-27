@@ -648,6 +648,39 @@ async def request_action(
 
 
 # ---------------------------------------------------------------------------
+# Sonarr/Radarr queue fixes — the Alerts page's buttons for a stuck item.
+# ---------------------------------------------------------------------------
+
+_QUEUE_ACTIONS = {"import", "remove", "redownload"}
+
+
+@router.post("/{service_id}/queue/{queue_id}/{action}")
+async def queue_action(
+    service_id: int, queue_id: int, action: str, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """import: import it as what the app already matched it to. remove:
+    drop it from the queue and download client. redownload: remove, blocklist
+    the release, and search for another."""
+    if action not in _QUEUE_ACTIONS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown action: {action}")
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        if action == "import":
+            files = await _client_fn(row, client, "import_queue_item")(row["base_url"], api_key, queue_id)
+            result = {"ok": True, "files": files}
+        else:
+            await _client_fn(row, client, "remove_queue_item")(
+                row["base_url"], api_key, queue_id, action == "redownload", action == "redownload")
+            result = {"ok": True}
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action=f"queue.{action}", target_type="service_instance",
+                        target_id=service_id, detail={"queue_id": queue_id, **result})
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Downloads (NZBGet) — per-item queue/history actions and global pause.
 # ---------------------------------------------------------------------------
 

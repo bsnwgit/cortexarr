@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
+import { fmtDateTime } from '../utils/time'
 
 interface Token {
   id: number
@@ -33,7 +34,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function fmt(v: string | null, fallback: string) {
   if (!v) return fallback
   const d = new Date(v.replace(' ', 'T') + 'Z')
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateTime(d)
 }
 
 // Personal API tokens for the MCP endpoint. A token is shown once, when it's

@@ -8,6 +8,7 @@ import HistoryModal from '../components/HistoryModal'
 import CalendarModal from '../components/CalendarModal'
 import { CalendarIcon, ChevronIcon, HistoryIcon, RefreshIcon, SearchIcon, TrashIcon } from '../components/icons/UiIcons'
 import { getServiceAccent } from '../utils/serviceAccent'
+import { fmtDateOnly } from '../utils/time'
 
 interface Service {
   id: number
@@ -75,7 +76,7 @@ function fmtBytes(n: number) {
 function fmtDate(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateOnly(d)
 }
 
 function episodeStatus(ep: EpisodeItem): { label: string; className: string } {

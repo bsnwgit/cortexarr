@@ -1,6 +1,7 @@
 // Request states as seerr_client.py reports them, with their labels and
 // colors — shared by the Requests tab and the dashboard card.
 import type { ServiceAccent } from './serviceAccent'
+import { fmtDateTime } from './time'
 
 export type RequestState = 'pending' | 'approved' | 'declined' | 'failed' | 'processing' | 'partial' | 'available'
 
@@ -26,5 +27,5 @@ export function requestStateClass(state: RequestState, accent: ServiceAccent): s
 export function fmtWhen(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateTime(d)
 }

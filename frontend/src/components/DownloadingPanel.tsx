@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import DataTable, { type Column } from '../components/DataTable'
 import type { ServiceAccent } from '../utils/serviceAccent'
+import { fmtDateTime } from '../utils/time'
 
 interface QueueItem {
   id: number
@@ -41,7 +42,7 @@ function fmtDate(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
   if (Number.isNaN(d.getTime())) return v
-  return d.toLocaleString()
+  return fmtDateTime(d)
 }
 
 // "importPending" -> "Import pending" — trackedDownloadState is the pipeline

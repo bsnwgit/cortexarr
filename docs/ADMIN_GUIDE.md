@@ -43,9 +43,93 @@ planned reason and don't want alerts about it.
 
 Under **Settings** (user menu), each channel (email, webhook, ntfy, SMS) is
 configured and enabled independently, with a **Send test** button to
-confirm it actually works before relying on it. Notification *rules* —
-which problems alert, at what threshold — aren't built yet (see *Requested
-features* in the README); the channels themselves are live.
+confirm it actually works before relying on it.
+
+**Settings → General → Time zone** sets the zone every time in Cortexarr is
+shown in — tables, calendars (which day an episode lands on), and the
+timestamp at the foot of each alert. Left on *Browser default*, each viewer
+sees their own local time and alert messages are stamped in UTC.
+
+### Alert rules
+
+Nothing is sent until you add a rule: user menu → **Alerts** → **New
+rule**. A rule is:
+
+- **When** — one of:
+  - *Service unreachable* — can't connect, or the key/login is rejected.
+  - *Service reports an error* / *a warning* — the service's own health
+    check (an indexer down, a news server failing, …).
+  - *Queue item stuck* — a Sonarr/Radarr download or import in warning or
+    failed (e.g. "not enough free space").
+  - *Download failed* — NZBGet/SABnzbd.
+  - *Request failed or issue reported* — Seerr.
+- **On** — every service, or one.
+- **For at least** — how many minutes it must last before alerting; 0
+  alerts on the first check that sees it. Checks run at each service's
+  poll interval, so that's the resolution.
+- **Send through** — any of the configured channels. Users who turned a
+  channel on for themselves under their notification preferences get it
+  too.
+- **Remind every** — resend while the problem lasts, every so many
+  minutes; 0 alerts once. Only for problems that can clear.
+- **Also send when it clears** — for problems that can clear (the first
+  four); failed downloads and requests are one-off events.
+
+Each problem alerts once per rule, not on every check. Everything a rule
+finds in one check goes out as one message. Failed downloads and Seerr
+issues only count if they happened after Cortexarr started watching that
+service, so adding a rule doesn't replay old failures. A service in
+**maintenance mode** is ignored completely — no alerts, and no "resolved"
+when it comes back.
+
+### Fixing problems
+
+Each current problem says what's likely wrong, in plain words read from the
+message the service gave, and offers the fixes Cortexarr can apply (admins
+only; each is in the audit log):
+
+- **Import it** — a stuck Sonarr/Radarr download (e.g. "matched to series
+  by ID, automatic import is not possible", or after freeing disk space):
+  imports it as the episode or movie the app already matched, the same as
+  its own Interactive Import. Samples are skipped. If the app can't tell
+  which episodes a multi-file download is, it says so — use Interactive
+  Import in the app for that one.
+- **Remove & search again** — removes the download from the queue and the
+  download client, blocklists the release, and searches for another. Asks
+  you to type `Delete` first.
+- **Remove** — for a download you don't need (e.g. not an upgrade). Asks
+  you to type `Delete` first.
+- **Retry download** / **Retry request** — a failed NZBGet/SABnzbd download,
+  or a failed Seerr request.
+- **Test connection** — for an unreachable service; says whether it's the
+  network or the key.
+
+A link opens the right page in the app itself (its queue, or System →
+Status for health warnings). A fixed problem clears at the service's next
+check.
+
+**Many at once:** tick problems to fix or snooze them together. Only
+problems with exactly the same fixes can be selected together — once one is
+ticked, the others grey out — so one action means the same thing for every
+one. **Select all that fix the same way** picks a whole group in one click
+(e.g. every "Import it" problem). Several stuck episodes from one download
+(a season pack) are handled once, and each problem shows how its fix went.
+
+### Snooze and acknowledge
+
+Each current problem on the Alerts page has **Snooze**: silence it for an
+hour, 4 hours, a day, a week, a number of hours you type, or **until it
+clears** (acknowledged) — with an optional note saying why. A snoozed
+problem stays listed, marked with who snoozed it and until when; it just
+doesn't alert or remind. When a timed snooze runs out and the problem is
+still there, reminders pick up again. **Unsnooze** undoes it. A "resolved"
+message is still sent when an acknowledged problem clears. Admins and
+analysts can snooze; every snooze is in the audit log.
+
+The Alerts page also shows **current problems** (what Cortexarr sees
+wrong right now, and for how long) and **recently sent** alerts with each
+channel's result. **Send test** on a rule sends a sample of its alert
+through its channels.
 
 ## Users and roles
 

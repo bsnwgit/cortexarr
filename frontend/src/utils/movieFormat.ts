@@ -1,6 +1,7 @@
 // Display helpers shared by the Radarr views (movie list, movie page,
 // Missing tab).
 import type { ServiceAccent } from './serviceAccent'
+import { fmtDateOnly } from './time'
 
 export function fmtBytes(n: number) {
   if (!n) return '0 B'
@@ -24,7 +25,7 @@ export function fmtRuntime(minutes: number) {
 export function fmtDay(v: string | null) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? v : fmtDateOnly(d)
 }
 
 // Radarr's MovieStatusType values.

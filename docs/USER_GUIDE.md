@@ -3,8 +3,9 @@
 ## Your account
 
 Click your username in the top-right corner for **Services** (the list of
-monitored services), **Settings**, **API tokens**, **Change password**, and
-**Log out**.
+monitored services), **Alerts** (current problems, the alert rules, and
+what's been sent — see the [Admin Guide](ADMIN_GUIDE.md#alert-rules)),
+**Settings**, **API tokens**, **Change password**, and **Log out**.
 Admins also see **Add service** under Services (see the
 [Admin Guide](ADMIN_GUIDE.md)).
 

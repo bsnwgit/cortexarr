@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import DataTable, { type Column } from '../components/DataTable'
+import { fmtDateTime } from '../utils/time'
 
 interface AuditEntry {
   id: number
@@ -13,7 +14,7 @@ interface AuditEntry {
 }
 
 const AUDIT_COLUMNS: Column<AuditEntry>[] = [
-  { key: 'created_at', label: 'Date', render: (e) => new Date(e.created_at + 'Z').toLocaleString() },
+  { key: 'created_at', label: 'Date', render: (e) => fmtDateTime(new Date(e.created_at + 'Z')) },
   { key: 'username', label: 'User', className: 'text-violet-300' },
   { key: 'action', label: 'Action' },
   {

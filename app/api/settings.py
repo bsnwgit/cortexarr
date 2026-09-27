@@ -60,6 +60,11 @@ DEFAULTS: dict[str, Any] = {
     # Health-check history retention (scope #14)
     "health_retention_days": 30,
 
+    # Time zone for every time shown (web UI, alert messages) — an IANA name
+    # like "America/New_York". Empty = each viewer's browser zone in the web
+    # UI, and UTC in alert messages.
+    "timezone": "",
+
     # Self-update (scope #16)
     "self_update_mode": "manual",       # 'manual' | 'auto'
     "self_update_window_start": "02:00",
@@ -71,6 +76,15 @@ _SECRET_KEYS = frozenset({
     "notify_email_password", "notify_ntfy_auth_token", "notify_sms_twilio_auth_token",
 })
 _ENCRYPTED_KEYS = _SECRET_KEYS  # provider credentials — Fernet at rest, not just masked in responses
+
+
+def _validate(key: str, value: Any) -> None:
+    if key == "timezone" and value:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(str(value))
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(status_code=400, detail=f"Unknown time zone: {value}")
 
 
 def _store_value(key: str, value: Any) -> Any:
@@ -126,6 +140,7 @@ async def update_setting(key: str, body: SettingUpdate, admin: AdminUser, db: ai
         raise HTTPException(status_code=400, detail=f"Unknown setting key: {key}")
     if key in _SECRET_KEYS and body.value == _MASK:
         return {"key": key, "updated": False, "skipped": "mask value"}
+    _validate(key, body.value)
 
     await db.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) "
@@ -143,6 +158,8 @@ async def bulk_update(updates: dict[str, Any], admin: AdminUser, db: aiosqlite.C
     unknown = [k for k in updates if k not in DEFAULTS]
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown keys: {unknown}")
+    for key, value in updates.items():
+        _validate(key, value)
 
     skipped = []
     for key, value in updates.items():
@@ -175,95 +192,12 @@ async def test_notification(body: TestNotificationRequest, admin: AdminUser, db:
     if channel not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown channel: {channel}. Valid: {sorted(valid)}")
 
-    async def _get(key: str):
-        async with db.execute("SELECT value FROM settings WHERE key=?", (key,)) as cur:
-            row = await cur.fetchone()
-        return json.loads(row[0]) if row else None
+    from app.notifications.sender import Message, send
 
-    TEST_MSG = "Cortexarr test notification — your configuration is working correctly."
-
-    try:
-        if channel == "email":
-            if not await _get("notify_email_enabled"):
-                return {"status": "skipped", "detail": "Email is not enabled"}
-            host = await _get("notify_email_smtp_host") or ""
-            port = await _get("notify_email_smtp_port") or 587
-            use_tls = await _get("notify_email_smtp_tls")
-            use_tls = True if use_tls is None else use_tls
-            username = await _get("notify_email_username") or ""
-            password = await read_secret(db, "notify_email_password")
-            from_addr = await _get("notify_email_from") or "cortexarr@localhost"
-            to_addrs = await _get("notify_email_default_to") or []
-            if not host or not to_addrs:
-                return {"status": "skipped", "detail": "SMTP host or recipient list not configured"}
-            import aiosmtplib
-            from email.mime.text import MIMEText
-            msg = MIMEText(f"Cortexarr Test Notification\n\n{TEST_MSG}", "plain")
-            msg["Subject"] = "[Cortexarr Test] Notification check"
-            msg["From"] = from_addr
-            msg["To"] = ", ".join(to_addrs)
-            await aiosmtplib.send(
-                msg, hostname=host, port=int(port), use_tls=bool(use_tls),
-                username=username or None, password=password or None,
-            )
-            return {"status": "sent", "detail": f"Email sent to {', '.join(to_addrs)}"}
-
-        elif channel == "webhook":
-            if not await _get("notify_webhook_enabled"):
-                return {"status": "skipped", "detail": "Webhook is not enabled"}
-            url = await _get("notify_webhook_url") or ""
-            method = await _get("notify_webhook_method") or "POST"
-            headers = await _get("notify_webhook_headers") or {}
-            if not url:
-                return {"status": "skipped", "detail": "No webhook URL configured"}
-            import httpx
-            async with httpx.AsyncClient() as client:
-                resp = await client.request(
-                    method.upper(), url, json={"text": TEST_MSG}, headers=headers, timeout=10
-                )
-            if resp.status_code < 300:
-                return {"status": "sent", "detail": f"Webhook returned HTTP {resp.status_code}"}
-            return {"status": "failed", "detail": f"Webhook returned HTTP {resp.status_code}: {resp.text[:200]}"}
-
-        elif channel == "ntfy":
-            if not await _get("notify_ntfy_enabled"):
-                return {"status": "skipped", "detail": "ntfy is not enabled"}
-            server = (await _get("notify_ntfy_server") or "https://ntfy.sh").rstrip("/")
-            topic = await _get("notify_ntfy_topic") or ""
-            token = await read_secret(db, "notify_ntfy_auth_token")
-            if not topic:
-                return {"status": "skipped", "detail": "No ntfy topic configured"}
-            import httpx
-            headers = {"Title": "Cortexarr Test"}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{server}/{topic}", content=TEST_MSG.encode(), headers=headers, timeout=10)
-            if resp.status_code < 300:
-                return {"status": "sent", "detail": f"ntfy returned HTTP {resp.status_code}"}
-            return {"status": "failed", "detail": f"ntfy returned HTTP {resp.status_code}: {resp.text[:200]}"}
-
-        elif channel == "sms":
-            if not await _get("notify_sms_enabled"):
-                return {"status": "skipped", "detail": "SMS is not enabled"}
-            sid = await _get("notify_sms_twilio_account_sid") or ""
-            auth = await read_secret(db, "notify_sms_twilio_auth_token")
-            from_number = await _get("notify_sms_twilio_from_number") or ""
-            to_numbers = await _get("notify_sms_default_to") or []
-            if not sid or not auth or not from_number or not to_numbers:
-                return {"status": "skipped", "detail": "Twilio not fully configured"}
-            import httpx
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-                    auth=(sid, auth),
-                    data={"From": from_number, "To": to_numbers[0], "Body": TEST_MSG},
-                    timeout=10,
-                )
-            if resp.status_code < 300:
-                return {"status": "sent", "detail": f"SMS sent to {to_numbers[0]}"}
-            return {"status": "failed", "detail": f"Twilio returned HTTP {resp.status_code}: {resp.text[:200]}"}
-
-    except Exception:
-        log.exception("notification test call failed")
-        return {"status": "failed", "detail": "Request failed — see the app log for detail"}
+    test_msg = "Cortexarr test notification — your configuration is working correctly."
+    return await send(db, channel, Message(
+        subject="[Cortexarr Test] Notification check",
+        email_body=f"Cortexarr Test Notification\n\n{test_msg}",
+        title="Cortexarr Test",
+        text=test_msg,
+    ), first_sms_only=True)
