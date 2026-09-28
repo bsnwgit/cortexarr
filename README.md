@@ -42,7 +42,12 @@ leaving the page.
   long it's been in its stage (and episode counts for TV); alert rules flag
   a request that stalls in a stage longer than you set. Flags it too when
   Seerr's own status has gone stale — it says available, but Sonarr/Radarr
-  is still searching — with a one-click **Search again**.
+  is still searching — with a one-click **Search again**. Also flags a
+  request **orphaned** — nothing in Sonarr/Radarr matches it at all any
+  more, the title having been deleted after Seerr sent or marked it — with
+  one-click **Clear**. Available requests get a **Verify still on disk**
+  action that asks Sonarr/Radarr to re-check the file, in case it's been
+  moved or deleted outside the pipeline.
 - **Dashboard** — requests run full width across the top; below, one card
   per service with nested cards for whatever needs attention. Each card can
   be refreshed on its own or opened in the service's own web UI.
@@ -88,10 +93,12 @@ leaving the page.
 
 Planned but not built yet — kept here so none of it gets lost:
 
-- **Force sync with reality, the rest of it** — Tracking already flags one
-  mismatch (Seerr says available, Sonarr/Radarr is still searching); still
-  open is the download client and disk itself, and orphaned Seerr requests
-  with nothing left in Sonarr/Radarr to match them to.
+- **Force sync with reality, the download client** — a queue entry with
+  nothing matching in Sonarr/Radarr's own queue wastes bandwidth for
+  nothing, but correlating them reliably needs a field-by-field check
+  against real download-client data (NZBGet's queue doesn't obviously
+  expose the same id Sonarr/Radarr records) that hasn't been verified
+  against a real instance yet.
 - **AI provider integration** — pluggable AI providers inside Cortexarr
   itself (the MCP server for outside AI tools is built).
 - **Live TV (Dispatcharr)** — its own dashboard section.

@@ -21,6 +21,7 @@ which turns a stage that lasts too long into a stalled_<stage> condition.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 from typing import Any, Optional
 
@@ -32,6 +33,13 @@ from app.services import radarr_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError, ServiceApiError
 
 log = logging.getLogger("cortexarr.tracking")
+
+# Force sync with reality, orphaned requests: how long a request can sit
+# "sending" (approved by Seerr, no matching Sonarr/Radarr item yet) before
+# it's flagged rather than assumed to be a normal, brief handoff. Seerr
+# usually sends within seconds; long enough that a real handoff is never
+# wrongly flagged, short enough to notice the same day.
+_ORPHAN_MINUTES = 30
 
 STAGES = ("approval", "sending", "searching", "downloading", "importing", "available")
 # Stages a request can stall in — each is an alert event, stalled_<stage>.
@@ -162,6 +170,44 @@ def _track(r: dict[str, Any], libs: list[dict[str, Any]], failed_types: set[str]
     return {**out, "stage": "searching", "since": added, "detail": f"{aired - files} missing"}
 
 
+async def _sending_since(db: aiosqlite.Connection, seerr_id: int) -> dict[int, str]:
+    """request_id -> first_seen, for every request currently recorded as
+    stalled in 'sending' — reuses the alert engine's own condition tracking
+    (app/notifications/engine.py) rather than keeping a second timer, since
+    it already records this unconditionally on every poll regardless of
+    whether an alert rule exists for it."""
+    async with db.execute(
+        "SELECT key, first_seen FROM alert_conditions WHERE service_instance_id = ? AND key LIKE 'track:%:sending'",
+        (seerr_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    out: dict[int, str] = {}
+    for row in rows:
+        try:
+            request_id = int(row["key"].split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        out[request_id] = row["first_seen"]
+    return out
+
+
+def _is_orphaned(t: dict[str, Any], sending_since: dict[int, str]) -> bool:
+    if t["arr"] is not None:
+        return False
+    if t["stage"] == "available":
+        # Seerr thinks this is done, but nothing matches it any more —
+        # unambiguous regardless of how long, unlike "sending" below.
+        return True
+    if t["stage"] == "sending":
+        since = sending_since.get(t["request_id"])
+        if not since:
+            return False
+        first_seen = dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc)
+        age = dt.datetime.now(dt.timezone.utc) - first_seen
+        return age.total_seconds() > _ORPHAN_MINUTES * 60
+    return False
+
+
 async def track(db: aiosqlite.Connection, seerr_id: Optional[int] = None) -> dict[str, Any]:
     """Every request's stage — for one Seerr instance, or all of them.
     {"requests": [...], "errors": ["<service>: <why>", ...]}"""
@@ -187,6 +233,7 @@ async def track(db: aiosqlite.Connection, seerr_id: Optional[int] = None) -> dic
         except (ConnectivityError, ServiceApiError) as exc:
             errors.append(f"{seerr['name']}: {exc}")
             continue
+        sending_since = await _sending_since(db, seerr["id"])
         for r in reqs:
             t = _track(r, libs, failed_types)
             if t:
@@ -196,6 +243,10 @@ async def track(db: aiosqlite.Connection, seerr_id: Optional[int] = None) -> dic
                 # from an ordinary in-progress search, which Seerr correctly
                 # shows as still wanted.
                 t["mismatch"] = t["seerr_state"] == "available" and t["stage"] == "searching"
+                # Force sync with reality, the other half: nothing in
+                # Sonarr/Radarr matches this request at all any more — the
+                # title was deleted after Seerr sent or marked it.
+                t["orphaned"] = _is_orphaned(t, sending_since)
                 out.append({**t, "seerr": {"service_id": seerr["id"], "service_name": seerr["name"]}})
     return {"requests": out, "errors": errors}
 

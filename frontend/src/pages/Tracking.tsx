@@ -25,6 +25,9 @@ interface Tracked {
   // Force sync with reality: Seerr says available, but this is still
   // searching — Seerr's own state went stale.
   mismatch: boolean
+  // Force sync with reality, the other half: nothing in Sonarr/Radarr
+  // matches this request at all any more.
+  orphaned: boolean
 }
 
 interface TrackingResponse {
@@ -98,6 +101,10 @@ export default function Tracking() {
   const setFilter = (f: string) => setParams(f === 'active' ? {} : { stage: f })
   const [searching, setSearching] = useState<number | null>(null)
   const [searchResult, setSearchResult] = useState<Record<number, { ok: boolean; text: string }>>({})
+  const [clearing, setClearing] = useState<number | null>(null)
+  const [clearResult, setClearResult] = useState<Record<number, { ok: boolean; text: string }>>({})
+  const [verifying, setVerifying] = useState<number | null>(null)
+  const [verifyResult, setVerifyResult] = useState<Record<number, { ok: boolean; text: string }>>({})
 
   async function load() {
     try {
@@ -123,6 +130,33 @@ export default function Tracking() {
       setSearchResult((s) => ({ ...s, [r.request_id]: { ok: false, text: err instanceof ApiError ? err.message : 'Failed' } }))
     } finally {
       setSearching(null)
+    }
+  }
+
+  async function clearOrphaned(r: Tracked) {
+    setClearing(r.request_id)
+    try {
+      await api.post(`/services/${r.seerr.service_id}/requests/${r.request_id}/clear`, {})
+      setClearResult((s) => ({ ...s, [r.request_id]: { ok: true, text: 'Cleared.' } }))
+      await load()
+    } catch (err) {
+      setClearResult((s) => ({ ...s, [r.request_id]: { ok: false, text: err instanceof ApiError ? err.message : 'Failed' } }))
+    } finally {
+      setClearing(null)
+    }
+  }
+
+  async function verifyAvailable(r: Tracked) {
+    if (!r.arr) return
+    setVerifying(r.request_id)
+    try {
+      const path = r.arr.type === 'sonarr' ? 'series' : 'movies'
+      await api.post(`/services/${r.arr.service_id}/${path}/${r.arr.item_id}/rescan`, {})
+      setVerifyResult((s) => ({ ...s, [r.request_id]: { ok: true, text: 'Asked Sonarr/Radarr to re-check the disk.' } }))
+    } catch (err) {
+      setVerifyResult((s) => ({ ...s, [r.request_id]: { ok: false, text: err instanceof ApiError ? err.message : 'Failed' } }))
+    } finally {
+      setVerifying(null)
     }
   }
 
@@ -212,6 +246,14 @@ export default function Tracking() {
                         Seerr says available
                       </span>
                     )}
+                    {r.orphaned && (
+                      <span
+                        className="metadata-pill text-xs text-red-300"
+                        title="Nothing in Sonarr/Radarr matches this request any more"
+                      >
+                        Orphaned
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-400 mt-0.5">
                     {r.requested_by ? `Requested by ${r.requested_by}` : 'Requested'}
@@ -265,6 +307,41 @@ export default function Tracking() {
                       {searchResult[r.request_id] && (
                         <span className={clsx('text-xs', searchResult[r.request_id].ok ? 'text-teal-300' : 'text-red-300')}>
                           {searchResult[r.request_id].text}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {r.orphaned && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => clearOrphaned(r)}
+                        disabled={clearing === r.request_id}
+                        className="rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 text-xs font-medium px-3 py-1.5"
+                      >
+                        {clearing === r.request_id ? 'Clearing…' : 'Clear'}
+                      </button>
+                      {clearResult[r.request_id] && (
+                        <span className={clsx('text-xs', clearResult[r.request_id].ok ? 'text-teal-300' : 'text-red-300')}>
+                          {clearResult[r.request_id].text}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {r.stage === 'available' && r.arr && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => verifyAvailable(r)}
+                        disabled={verifying === r.request_id}
+                        title="Ask Sonarr/Radarr to re-check the file on disk"
+                        className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-50 underline"
+                      >
+                        {verifying === r.request_id ? 'Verifying…' : 'Verify still on disk'}
+                      </button>
+                      {verifyResult[r.request_id] && (
+                        <span className={clsx('text-xs', verifyResult[r.request_id].ok ? 'text-teal-300' : 'text-red-300')}>
+                          {verifyResult[r.request_id].text}
                         </span>
                       )}
                     </div>

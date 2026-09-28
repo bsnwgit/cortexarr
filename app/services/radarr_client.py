@@ -292,6 +292,15 @@ async def search_movie(base_url: str, api_key: str, movie_id: int) -> None:
     await _post(base_url, api_key, "/api/v3/command", {"name": "MoviesSearch", "movieIds": [movie_id]})
 
 
+async def rescan_movie(base_url: str, api_key: str, movie_id: int) -> None:
+    """Ask Radarr to re-check the actual file on disk — the fix for
+    Radarr's own has_file/is_available believing a file exists when it's
+    been moved or deleted outside Radarr's awareness (force sync with
+    reality: Cortexarr has no filesystem access of its own, so the only
+    honest way to verify disk state is asking Radarr to look again)."""
+    await _post(base_url, api_key, "/api/v3/command", {"name": "RescanMovie", "movieIds": [movie_id]})
+
+
 async def delete_movie_file(base_url: str, api_key: str, movie_file_id: int) -> None:
     """Delete the movie's file from disk via Radarr; the movie itself stays
     in the library (and shows as missing again)."""

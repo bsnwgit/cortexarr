@@ -426,6 +426,15 @@ async def search_series(base_url: str, api_key: str, series_id: int) -> None:
     await _post(base_url, api_key, "/api/v3/command", {"name": "SeriesSearch", "seriesId": series_id})
 
 
+async def rescan_series(base_url: str, api_key: str, series_id: int) -> None:
+    """Ask Sonarr to re-check the actual files on disk — the fix for
+    Sonarr's own episode file counts believing a file exists when it's been
+    moved or deleted outside Sonarr's awareness (force sync with reality:
+    Cortexarr has no filesystem access of its own, so the only honest way
+    to verify disk state is asking Sonarr to look again)."""
+    await _post(base_url, api_key, "/api/v3/command", {"name": "RescanSeries", "seriesId": series_id})
+
+
 async def delete_episode_file(base_url: str, api_key: str, episode_file_id: int) -> None:
     """Delete one episode's file from disk via Sonarr (not just unmonitor
     it) — the trash-can action on a present episode."""
