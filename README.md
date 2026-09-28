@@ -2,6 +2,9 @@
 
 # Cortexarr
 
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
+[![GitHub Discussions](https://img.shields.io/github/discussions/bsnwgit/cortexarr)](https://github.com/bsnwgit/cortexarr/discussions)
+
 One dashboard for a self-hosted media acquisition pipeline — Seerr,
 Sonarr, Radarr, and your Usenet download client (NZBGet or SABnzbd) —
 instead of tabbing between five admin UIs to find out what's stuck.
