@@ -3,9 +3,10 @@ Cortexarr — FastAPI application entry point.
 
 Sonarr + Radarr + Seerr + NZBGet + SABnzbd: app-level health (scope #1),
 global + per-user notifications (#3, #13), audit log (#21), public status
-API, and an MCP server with parity to the web UI (/mcp). Item-level flow
-tracking, AI provider integration, and self-update all land in later
-passes — see the project memory for the full scope list.
+API, history and trends (#4, app/history.py + app/api/history.py),
+self-update (#16, app/self_update.py), and an MCP server with parity to
+the web UI (/mcp). Item-level flow tracking and AI provider integration
+land in later passes — see the project memory for the full scope list.
 """
 from __future__ import annotations
 
@@ -23,11 +24,13 @@ from app.config import get_settings
 from app.database import init_db, seed_admin
 
 from app.api import auth, users, services, settings as settings_router, status as status_router, audit as audit_router
-from app.api import alerts, tokens, tracking, config_export, server_tls, webhooks
+from app.api import alerts, tokens, tracking, config_export, server_tls, webhooks, history as history_router
 from app.mcp import server as mcp_server
+from app.self_update import current_version
 
 settings = get_settings()
 log = logging.getLogger("cortexarr")
+_APP_VERSION = ".".join(str(p) for p in current_version())
 
 _PLACEHOLDER_SECRETS = {
     "secret_key": {"", "CHANGE_ME_IN_PRODUCTION_secret_key_32chars", "CHANGE_ME_generate_with_openssl_rand_hex_32"},
@@ -55,16 +58,28 @@ async def lifespan(app: FastAPI):
     app.state.poller_task = poller_task
     log.info("Health poller task started")
 
+    from app.history import run_forever as history_run_forever
+    history_task = asyncio.create_task(history_run_forever())
+    app.state.history_task = history_task
+    log.info("Request-history scan task started")
+
+    from app.self_update import run_forever as self_update_run_forever
+    self_update_task = asyncio.create_task(self_update_run_forever())
+    app.state.self_update_task = self_update_task
+    log.info("Self-update checker task started")
+
     yield
 
     log.info("Cortexarr shutting down")
     poller_task.cancel()
+    history_task.cancel()
+    self_update_task.cancel()
 
 
 app = FastAPI(
     title="Cortexarr",
     description="Health and flow monitoring for a self-hosted media acquisition pipeline",
-    version="0.1.0",
+    version=_APP_VERSION,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     lifespan=lifespan,
@@ -94,11 +109,12 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 app.include_router(mcp_server.router, tags=["mcp"])
 # Public, unauthenticated — see app/api/status.py's module docstring.
 app.include_router(status_router.router, prefix="/api/status", tags=["status"])
+app.include_router(history_router.router, prefix="/api/history", tags=["history"])
 
 
 @app.get("/api/health", tags=["system"])
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": _APP_VERSION}
 
 
 # -- Serve React frontend (production build) ---------------------------------------

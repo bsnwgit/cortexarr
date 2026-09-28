@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -168,6 +168,10 @@ export default function Alerts() {
   // Set by clicking a "fix the same way" pill: shows only that group, until
   // toggled off or the group empties out (everything in it got fixed).
   const [groupFilter, setGroupFilter] = useState<string | null>(null)
+  // Set by arriving from a service's status pill — kept in the URL so the
+  // narrowed view can be bookmarked or linked to, same as Tracking's filter.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const serviceFilter = searchParams.get('service')
 
   async function load() {
     const [p, l] = await Promise.all([
@@ -219,7 +223,12 @@ export default function Alerts() {
     }
   }
 
-  const visibleProblems = groupFilter ? problems.filter((p) => fixSet(p) === groupFilter) : problems
+  const visibleProblems = problems
+    .filter((p) => !groupFilter || fixSet(p) === groupFilter)
+    .filter((p) => !serviceFilter || String(p.service_id) === serviceFilter)
+  const serviceFilterName = serviceFilter
+    ? problems.find((p) => String(p.service_id) === serviceFilter)?.service_name ?? `Service ${serviceFilter}`
+    : null
   const selectedProblems = problems.filter((p) => selected.has(rowKey(p)))
   const selectedFixSet = selectedProblems.length ? fixSet(selectedProblems[0]) : null
   const groups = Array.from(
@@ -304,11 +313,30 @@ export default function Alerts() {
     <div>
       <Section
         title={
-          groupFilter
+          groupFilter || serviceFilter
             ? `Current problems (${visibleProblems.length} of ${problems.length} shown)`
             : `Current problems (${problems.length})`
         }
       >
+        {serviceFilter && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <span>
+              Showing only <span className="text-slate-200">{serviceFilterName}</span>.
+            </span>
+            <button
+              onClick={() =>
+                setSearchParams((p) => {
+                  const next = new URLSearchParams(p)
+                  next.delete('service')
+                  return next
+                })
+              }
+              className="underline hover:text-slate-200"
+            >
+              Show all
+            </button>
+          </div>
+        )}
         {canSnooze && problems.length > 1 && (
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span>Select all that fix the same way:</span>

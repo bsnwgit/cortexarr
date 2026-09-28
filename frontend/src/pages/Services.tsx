@@ -304,6 +304,7 @@ export default function Services() {
                   <StatusPill
                     service={statusById[s.id] ?? { maintenance_mode: s.maintenance_mode, status: null }}
                     accent={getServiceAccent(s.type)}
+                    serviceId={s.id}
                   />
                 </div>
                 <div className="text-xs text-slate-500">

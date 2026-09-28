@@ -178,6 +178,25 @@ async def bulk_update(updates: dict[str, Any], admin: AdminUser, db: aiosqlite.C
     return {"updated": written, "skipped": skipped}
 
 
+@router.get("/update-status")
+async def get_update_status(_: CurrentUser, db: aiosqlite.Connection = Depends(get_db)):
+    """What self-update (scope #16) knows right now: current version, the
+    latest GitHub release if newer, and the last apply attempt. Read-only —
+    the actual check runs on its own schedule in app/self_update.py."""
+    from app import self_update
+    return await self_update.status(db)
+
+
+@router.post("/update-check")
+async def force_update_check(admin: AdminUser, db: aiosqlite.Connection = Depends(get_db)):
+    """Admin-triggered "check now", instead of waiting for the hourly poll."""
+    from app import self_update
+    result = await self_update.check_latest(db)
+    await audit.record(db, user=admin, action="self_update.check", target_type="system",
+                        detail={"available": result.get("update_available")})
+    return result
+
+
 class TestNotificationRequest(BaseModel):
     channel: str  # 'email' | 'webhook' | 'ntfy' | 'sms'
 

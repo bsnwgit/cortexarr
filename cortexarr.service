@@ -21,7 +21,12 @@ Environment=CORTEXARR_INSTALL_DIR=__INSTALL_DIR__
 
 ExecStart=__INSTALL_DIR__/venv/bin/python -m app.main
 
-Restart=on-failure
+# always, not on-failure: self-update (app/self_update.py) applies a new
+# release by swapping files in place and then exiting cleanly, relying on
+# systemd to bring the new code back up. An explicit `systemctl stop` or
+# `restart` still wins over this — systemd doesn't restart a unit that was
+# asked to stop, regardless of Restart=.
+Restart=always
 RestartSec=5
 StartLimitInterval=60
 StartLimitBurst=3

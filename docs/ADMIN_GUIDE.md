@@ -236,6 +236,36 @@ moved to a fresh install.
   are always applied, except a blank secret from a credentials-excluded file
   never overwrites a real one already configured.
 
+## Self-update
+
+**Settings → General** shows the running version and checks
+`github.com/bsnwgit/cortexarr`'s releases once an hour for a newer one —
+**Check now** asks immediately instead of waiting.
+
+- **Manual** (the default) only ever notifies: a banner links to the
+  release notes, and nothing on disk changes until someone updates by
+  hand.
+- **Auto** downloads the newer release's packaged asset and applies it
+  itself, inside the daily window set below the mode dropdown — never
+  outside it, so an update never lands mid-use. Applying means: replacing
+  `app/`, `migrations/`, `docs/`, `VERSION`, `requirements.txt` and the
+  built frontend in the install directory, `pip install`-ing any new
+  Python dependencies into the existing virtualenv, then exiting — the
+  systemd unit (`Restart=always`) brings the new version straight back up.
+  `config.yaml`, the database, logs and the virtualenv itself are never
+  touched by the swap.
+- There's no code signing upstream: an auto-update trusts GitHub's TLS and
+  nothing beyond it, the same as any other HTTPS download.
+- Auto mode refuses to run against an install that's a git checkout (a
+  `.git` directory next to `app/`) — that's a working tree, and overwriting
+  it would silently discard whatever hasn't been committed. Development
+  and staging checkouts should stay on manual and update via `git pull`
+  instead.
+- Auto mode also refuses inside the Docker image — there, `app/` lives in
+  the read-only image layer, not somewhere a file swap could durably land.
+  Update a container by pulling a new image tag instead (see the README's
+  Docker section); self-update inside Docker only ever notifies.
+
 ## MCP server and API tokens
 
 Cortexarr serves MCP (streamable HTTP) at `/mcp`, on the same port as the
