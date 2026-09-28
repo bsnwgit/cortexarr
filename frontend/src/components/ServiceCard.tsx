@@ -41,7 +41,7 @@ function PlainServiceCard({ service }: { service: DashboardService }) {
         </span>
         <span className="flex items-center gap-1.5">
           <OpenServiceLink url={service.base_url} name={service.name} />
-          <StatusPill service={service} accent={accent} />
+          <StatusPill service={service} accent={accent} serviceId={service.id} />
         </span>
       </div>
       <div className={clsx('text-xs capitalize', accent.text)}>{service.type}</div>

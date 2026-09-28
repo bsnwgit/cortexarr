@@ -82,6 +82,29 @@ To be told when a request sits in one stage too long, add a *Request …*
 alert rule (Admin Guide → Alert rules) — its "for at least" is that stage's
 threshold.
 
+A request badged **Seerr says available** means Seerr's own status has
+gone stale — it's showing the title as available, but Sonarr/Radarr hasn't
+actually found a release for it. **Search again** tries once more; if
+nothing turns up, the indexers may not have it, or the quality profile may
+be too strict.
+
+## History
+
+**History** shows the same signals as the rest of the app, but over time
+instead of live: pick a 7/30/90-day range at the top right.
+
+- **Service uptime** — one card per service, the overall uptime % for the
+  range plus a small trend chart of each day's percentage. This reads the
+  same health checks the Dashboard's status pills use, kept for as long as
+  Settings → General's retention setting allows.
+- **Alert frequency** — a bar per day of how many alerts fired, plus the
+  rules and services responsible for the most of them.
+- **Requests completed** — how many requests reached *Available* in the
+  range, the average time from request to available, and a breakdown by
+  TV/movie. This one only fills in going forward: nothing before History
+  shipped was recorded, since nothing tracked *when* a request finished
+  until now.
+
 ## Service pages
 
 The refresh icon at the right of a service page's header reloads that page

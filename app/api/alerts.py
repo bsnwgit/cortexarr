@@ -219,37 +219,13 @@ async def _apply(db: aiosqlite.Connection, admin: dict, row: aiosqlite.Row, acti
     if action == "approve_request":
         return await svc.request_action(sid, int(ref.split(":")[0]), "approve", admin, db)
     if action == "search_request":
-        return await _search_request(db, admin, sid, int(ref.split(":")[0]))
+        from app import tracking
+        return await tracking.search_request(db, admin, sid, int(ref.split(":")[0]))
     if action == "clear_request":
         # Same ref parsing whichever kind of key this came from:
         # "issue:request-123" -> ref "request-123"; "track:123:stage" -> ref "123:stage".
         return await svc.request_action(sid, int(ref.removeprefix("request-").split(":")[0]), "clear", admin, db)
     return await svc.test_connection_saved(sid, admin, db)
-
-
-async def _search_request(db: aiosqlite.Connection, admin: dict, seerr_id: int, request_id: int) -> dict:
-    """Search now for what a request is still missing: the movie, or each
-    requested season that has episodes aired but not on disk."""
-    from app import tracking
-    from app.api import services as svc
-
-    found = next((t for t in (await tracking.track(db, seerr_id))["requests"] if t["request_id"] == request_id), None)
-    if not found or not found.get("arr") or found["stage"] != "searching":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request isn't searching any more")
-    arr = found["arr"]
-    if arr["type"] == "radarr":
-        await svc.trigger_movie_search(arr["service_id"], arr["item_id"], admin, db)
-        return {"ok": True, "searched": 1}
-    series = await svc.series_detail(arr["service_id"], arr["item_id"], admin, db)
-    wanted = set(found["seasons"]) or None
-    seasons = [s for s in series.get("seasons") or []
-               if (wanted is None and s.get("season_number")) or (wanted and s.get("season_number") in wanted)]
-    searched = 0
-    for s in seasons:
-        if (s.get("episode_file_count") or 0) < (s.get("episode_count") or 0):
-            await svc.trigger_season_search(arr["service_id"], arr["item_id"], s["season_number"], admin, db)
-            searched += 1
-    return {"ok": True, "searched": searched}
 
 
 @router.post("/fix")

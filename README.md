@@ -40,10 +40,17 @@ leaving the page.
 - **Request tracking** — every Seerr request followed through approval,
   Sonarr/Radarr, searching, downloading and import to available, with how
   long it's been in its stage (and episode counts for TV); alert rules flag
-  a request that stalls in a stage longer than you set.
+  a request that stalls in a stage longer than you set. Flags it too when
+  Seerr's own status has gone stale — it says available, but Sonarr/Radarr
+  is still searching — with a one-click **Search again**.
 - **Dashboard** — requests run full width across the top; below, one card
   per service with nested cards for whatever needs attention. Each card can
   be refreshed on its own or opened in the service's own web UI.
+- **History** — a top-nav tab with reporting over time: per-service uptime
+  (from health checks already being recorded), alert frequency with the
+  most active rules and services, and requests completed with average time
+  to available. A 7/30/90-day range on each. Request trends fill in going
+  forward from when this shipped — nothing before that is backfilled.
 - **Notifications** — a top-nav tab, next to Tracking, with four views:
   Alerts and Rules (below), an activity feed across every service
   (filterable by pipeline), and an audit log of every change made in
@@ -72,21 +79,21 @@ leaving the page.
   you choose to include them — which requires a password and encrypts the
   file, rather than writing secrets out in plain text. Re-importing skips
   anything already there by name, so it's safe to run the same file twice.
+- **Self-update** — checks GitHub releases against the running version;
+  manual mode (the default) just shows what's available, auto mode
+  downloads and applies it inside a maintenance window you set, then
+  restarts itself.
 
 ## Requested features
 
 Planned but not built yet — kept here so none of it gets lost:
 
-- **Force sync with reality** — compare what Seerr says (requested,
-  processing, available) with what's really in Sonarr/Radarr, the download
-  client, and on disk; show every mismatch, and bring them back in line in
-  one step.
-- **History and trends** — reporting over time, beyond the live views.
+- **Force sync with reality, the rest of it** — Tracking already flags one
+  mismatch (Seerr says available, Sonarr/Radarr is still searching); still
+  open is the download client and disk itself, and orphaned Seerr requests
+  with nothing left in Sonarr/Radarr to match them to.
 - **AI provider integration** — pluggable AI providers inside Cortexarr
   itself (the MCP server for outside AI tools is built).
-- **Self-update** — manual or automatic updates from GitHub releases, within
-  a maintenance window you set.
-- **Docker install** — alongside the native `install.sh`.
 - **Live TV (Dispatcharr)** — its own dashboard section.
 
 ## Screenshots
@@ -108,13 +115,26 @@ Planned but not built yet — kept here so none of it gets lost:
 
 ## Requirements
 
+Native install:
 - Ubuntu 22.04/24.04 LTS (or any Linux with Python 3.11+ and systemd)
 - Python 3.11+
 - Node.js (for building the frontend — any recent LTS)
-- Any of Sonarr, Radarr, Seerr, NZBGet, or SABnzbd — add only what you
-  run.
+
+Docker: just Docker and Compose — the image builds the frontend itself.
+
+Either way: any of Sonarr, Radarr, Seerr, NZBGet, or SABnzbd — add only
+what you run.
 
 ## Install
+
+Get the code first, either way:
+
+```
+git clone https://github.com/bsnwgit/cortexarr.git
+cd cortexarr
+```
+
+Then, native (Ubuntu, systemd):
 
 ```
 bash install.sh
@@ -127,6 +147,23 @@ save it.
 
 To remove: `bash uninstall.sh` (keeps your data by default; `--purge` to
 remove that too).
+
+Or Docker:
+
+```
+docker compose up -d --build
+docker compose logs -f
+```
+
+Watch the logs for the "Cortexarr admin account created" block — the
+generated username and password are printed there once, on first boot
+only, and won't be shown again. `Ctrl+C` once you've got it, then open
+`http://<this-host>:8770` and sign in.
+
+Everything persistent — `config.yaml`, the database, logs — lives in the
+`cortexarr-data` volume; the image itself holds only code, so upgrading is
+`docker compose pull && docker compose up -d`, not self-update's in-place
+apply (self-update inside Docker only ever notifies — see the Admin Guide).
 
 ## Getting started
 

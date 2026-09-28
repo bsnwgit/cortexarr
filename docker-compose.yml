@@ -1,0 +1,19 @@
+# Quickest path to a running Cortexarr:
+#   docker compose up -d
+#   docker compose logs -f   # first-boot admin password is printed once here
+#
+# See docs/ADMIN_GUIDE.md and the README's Install section for the native
+# install.sh path instead, if that's a better fit than Docker.
+services:
+  cortexarr:
+    build: .
+    # Once published: image: ghcr.io/bsnwgit/cortexarr:latest
+    container_name: cortexarr
+    restart: unless-stopped
+    ports:
+      - "8770:8770"
+    volumes:
+      - cortexarr-data:/data
+
+volumes:
+  cortexarr-data:

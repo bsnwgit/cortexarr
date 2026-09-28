@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { fmtDateTime } from '../utils/time'
 import PageSpinner from '../components/PageSpinner'
 
@@ -22,6 +22,9 @@ interface Tracked {
   seerr_state: string
   seasons: number[]
   seerr: { service_id: number; service_name: string }
+  // Force sync with reality: Seerr says available, but this is still
+  // searching — Seerr's own state went stale.
+  mismatch: boolean
 }
 
 interface TrackingResponse {
@@ -93,6 +96,8 @@ export default function Tracking() {
   const [params, setParams] = useSearchParams()
   const filter = params.get('stage') || 'active'
   const setFilter = (f: string) => setParams(f === 'active' ? {} : { stage: f })
+  const [searching, setSearching] = useState<number | null>(null)
+  const [searchResult, setSearchResult] = useState<Record<number, { ok: boolean; text: string }>>({})
 
   async function load() {
     try {
@@ -107,6 +112,19 @@ export default function Tracking() {
     const interval = setInterval(load, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  async function searchAgain(r: Tracked) {
+    setSearching(r.request_id)
+    try {
+      const res = await api.post<{ searched: number }>(`/tracking/${r.seerr.service_id}/requests/${r.request_id}/search`, {})
+      setSearchResult((s) => ({ ...s, [r.request_id]: { ok: true, text: 'Search started.' } }))
+      await load()
+    } catch (err) {
+      setSearchResult((s) => ({ ...s, [r.request_id]: { ok: false, text: err instanceof ApiError ? err.message : 'Failed' } }))
+    } finally {
+      setSearching(null)
+    }
+  }
 
   const stages = data?.stages ?? []
   const all = data?.requests ?? []
@@ -186,6 +204,14 @@ export default function Tracking() {
                     </span>
                     <span className="metadata-pill text-xs">{r.media_type === 'tv' ? 'TV' : 'Movie'}</span>
                     {r.is_4k && <span className="metadata-pill text-xs">4K</span>}
+                    {r.mismatch && (
+                      <span
+                        className="metadata-pill text-xs text-amber-300"
+                        title="Seerr's own status hasn't caught up with reality"
+                      >
+                        Seerr says available
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-400 mt-0.5">
                     {r.requested_by ? `Requested by ${r.requested_by}` : 'Requested'}
@@ -225,6 +251,23 @@ export default function Tracking() {
                       {r.progress && r.detail && !side ? ' · ' : ''}
                       {!side ? r.detail : ''}
                     </p>
+                  )}
+
+                  {r.mismatch && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => searchAgain(r)}
+                        disabled={searching === r.request_id}
+                        className="rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5"
+                      >
+                        {searching === r.request_id ? 'Searching…' : 'Search again'}
+                      </button>
+                      {searchResult[r.request_id] && (
+                        <span className={clsx('text-xs', searchResult[r.request_id].ok ? 'text-teal-300' : 'text-red-300')}>
+                          {searchResult[r.request_id].text}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

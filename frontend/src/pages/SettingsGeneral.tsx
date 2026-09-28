@@ -27,6 +27,17 @@ interface ImportResult {
   rules_failed: { name: string; detail: string }[]
 }
 
+interface UpdateStatus {
+  current_version: string
+  latest_tag: string | null
+  latest_url: string | null
+  update_available: boolean
+  checked_at: string | null
+  last_error: string
+  last_applied_tag: string | null
+  last_applied_at: string | null
+}
+
 // Time zone, retention and self-update — everything that isn't about a
 // notification channel (those moved to their own Notifications tab).
 export default function SettingsGeneral() {
@@ -103,8 +114,76 @@ export default function SettingsGeneral() {
         </div>
       </div>
 
+      <UpdateCheck isAdmin={isAdmin} />
+
       {isAdmin && <ServerTls />}
       {isAdmin && <Backup />}
+    </div>
+  )
+}
+
+// Version + "is a newer release out" — separate from the mode/window Rows
+// above since it's status, not a setting to save.
+function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState('')
+
+  async function load() {
+    try {
+      setUpdate(await api.get<UpdateStatus>('/settings/update-status'))
+    } catch {
+      // Non-fatal — the rest of the settings page still works.
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function checkNow() {
+    setChecking(true)
+    setError('')
+    try {
+      setUpdate(await api.post<UpdateStatus>('/settings/update-check', {}))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Check failed')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  if (!update) return null
+
+  return (
+    <div className="bg-slate-925 border border-slate-800 rounded-xl p-4 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm text-slate-100">
+          Cortexarr <span className="text-slate-400">v{update.current_version}</span>
+        </div>
+        {isAdmin && (
+          <button onClick={checkNow} disabled={checking} className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-50 underline">
+            {checking ? 'Checking…' : 'Check now'}
+          </button>
+        )}
+      </div>
+      {update.update_available ? (
+        <p className="text-xs text-teal-300">
+          {update.latest_tag} is available.{' '}
+          {update.latest_url && (
+            <a href={update.latest_url} target="_blank" rel="noreferrer" className="underline hover:text-teal-200">
+              Release notes
+            </a>
+          )}
+        </p>
+      ) : (
+        <p className="text-xs text-slate-400">Up to date{update.checked_at ? ` — last checked ${new Date(update.checked_at).toLocaleString()}` : ''}.</p>
+      )}
+      {update.last_applied_tag && (
+        <p className="text-xs text-slate-500">Last applied: {update.last_applied_tag} ({update.last_applied_at ? new Date(update.last_applied_at).toLocaleString() : 'unknown time'})</p>
+      )}
+      {update.last_error && <p className="text-xs text-red-300">{update.last_error}</p>}
+      {error && <p className="text-xs text-red-300">{error}</p>}
     </div>
   )
 }

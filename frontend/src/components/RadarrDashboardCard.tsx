@@ -179,7 +179,7 @@ export default function RadarrDashboardCard({ service }: { service: DashboardSer
           <span className="flex items-center gap-1.5">
           <RefreshButton onRefresh={refresh} refreshing={refreshing} label={`Refresh ${service.name}`} />
           <OpenServiceLink url={service.base_url} name={service.name} />
-          <StatusPill service={service} accent={accent} />
+          <StatusPill service={service} accent={accent} serviceId={service.id} />
         </span>
         </div>
       </div>
