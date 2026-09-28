@@ -341,6 +341,10 @@ async def get_series_detail(base_url: str, api_key: str, series_id: int) -> dict
         "episode_count": sum(s["episode_count"] for s in seasons),
         "size_on_disk": sum(s["size_on_disk"] for s in seasons),
         "seasons": seasons,
+        # Not shown on the page — used to find this series' own Seerr
+        # request, the same ids request tracking matches by.
+        "tvdb_id": r.get("tvdbId"),
+        "tmdb_id": r.get("tmdbId"),
     }
 
 

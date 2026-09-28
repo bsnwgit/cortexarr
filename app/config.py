@@ -70,6 +70,14 @@ _CONFIG_PATH = _find_config_path()
 _yaml_cfg = _load_yaml(_CONFIG_PATH)
 _INSTALL_DIR = _default_install_dir(_CONFIG_PATH)
 
+# TLS is decided before this settings object even exists (uvicorn binds its
+# socket with it), so it can't wait for the SQLite-backed settings the rest
+# of the app uses — see app/tls_state.py.
+from app import tls_state as _tls_state  # noqa: E402 — needs _INSTALL_DIR above first
+
+_TLS_ENABLED_DEFAULT = _tls_state.read_enabled(str(_INSTALL_DIR))
+_TLS_CERTFILE_DEFAULT, _TLS_KEYFILE_DEFAULT = (str(p) for p in _tls_state.cert_paths(str(_INSTALL_DIR)))
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -85,6 +93,13 @@ class Settings(BaseSettings):
     port: int = Field(default=_yaml_cfg.get("port", 8770))
     workers: int = Field(default=_yaml_cfg.get("workers", 2))
     debug: bool = Field(default=_yaml_cfg.get("debug", False))
+
+    # -- HTTPS — set via Settings → Server (app/api/server_tls.py), not
+    # config.yaml, since it's managed by the app itself. A CORTEXARR_TLS_*
+    # env var still overrides it, same as everything else here.
+    tls_enabled: bool = Field(default=_TLS_ENABLED_DEFAULT)
+    tls_certfile: str = Field(default=_TLS_CERTFILE_DEFAULT)
+    tls_keyfile: str = Field(default=_TLS_KEYFILE_DEFAULT)
 
     # -- App root — every other path below defaults to somewhere under this --
     install_dir: str = Field(default=_yaml_cfg.get("install_dir", str(_INSTALL_DIR)))

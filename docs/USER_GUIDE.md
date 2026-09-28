@@ -115,7 +115,10 @@ confirm.
 
 ![Series page](images/series-detail.png)
 
-Removing a series from Sonarr does not delete its files from disk.
+Removing a series from Sonarr does not delete its files from disk. If it
+has a matching Seerr request, the delete confirm offers removing that too
+— ticked by default, so Seerr doesn't keep thinking it's wanted and quietly
+try to fill it again.
 
 ### Radarr
 
@@ -132,7 +135,8 @@ Removing a series from Sonarr does not delete its files from disk.
 - **Calendar** — a month grid of release dates (in cinemas, digital,
   physical).
 
-Removing a movie from Radarr does not delete its files from disk.
+Removing a movie from Radarr does not delete its files from disk. Same
+Seerr-request cleanup offer as Sonarr, if it was requested.
 
 ![Calendar](images/calendar.png)
 
@@ -169,12 +173,13 @@ estimated time), free disk space, anything post-processing, and **Pause all
 
 ![Download history](images/downloads-history.png)
 
-## Notifications (Alerts, Activities, Audit Log)
+## Notifications (Alerts, Rules, Activities, Audit Log)
 
-Top nav → **Notifications**, next to Tracking. Three sub-tabs:
+Top nav → **Notifications**, next to Tracking. Four sub-tabs:
 
-- **Alerts** — current problems, the alert rules, and what's been sent.
-  See the [Admin Guide](ADMIN_GUIDE.md#alert-rules) for the details.
+- **Alerts** — current problems, and what's been sent.
+- **Rules** — the alert rules that decide what notifies. See the
+  [Admin Guide](ADMIN_GUIDE.md#alert-rules) for the details.
 - **Activities** — one feed across every service: what Sonarr and Radarr
   grabbed and imported, request changes in Seerr, and finished downloads.
   The dropdown narrows it to one pipeline (Series, Movies, Requests,
@@ -218,6 +223,9 @@ The page also gives a ready-made client config: the server URL is
   before it does, so leave this off unless you need it.
 
 A token acts as you: anything it changes shows in the audit log as
-`<you> (MCP: <token name>)`. **Revoke** stops a token immediately. A token
-can't change your password or make other tokens.
+`<you> (MCP: <token name>)`. **Revoke** stops a token immediately.
+**Reissue** rolls a new secret onto the same token — same name, access, and
+expiry — for when it just needs rotating rather than removing; the old
+secret stops working the moment you do. A token can't change your password
+or make other tokens.
 

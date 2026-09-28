@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Optional
 
 import aiosqlite
@@ -55,7 +56,7 @@ class ServiceCreate(BaseModel):
     poll_interval_seconds: int = Field(default=60, ge=10)
     retry_count: int = Field(default=3, ge=0, le=10)
     retry_backoff_seconds: int = Field(default=5, ge=1)
-    ingestion_mode: str = "poll"
+    ingestion_mode: str = Field(default="poll", pattern="^(poll|webhook)$")
 
 
 class ServiceUpdate(BaseModel):
@@ -67,12 +68,13 @@ class ServiceUpdate(BaseModel):
     poll_interval_seconds: Optional[int] = Field(default=None, ge=10)
     retry_count: Optional[int] = Field(default=None, ge=0, le=10)
     retry_backoff_seconds: Optional[int] = Field(default=None, ge=1)
-    ingestion_mode: Optional[str] = None
+    ingestion_mode: Optional[str] = Field(default=None, pattern="^(poll|webhook)$")
 
 
 def _serialize(row: aiosqlite.Row) -> dict:
     d = dict(row)
     d["api_key"] = _MASK if d.pop("api_key_enc", "") else ""
+    d.pop("webhook_token", None)
     d["enabled"] = bool(d["enabled"])
     d["maintenance_mode"] = bool(d["maintenance_mode"])
     return d
@@ -133,10 +135,11 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
     api_key_enc = encrypt_str(body.api_key) if body.api_key else ""
     cur = await db.execute(
         "INSERT INTO service_instances "
-        "(name, type, base_url, api_key_enc, poll_interval_seconds, retry_count, retry_backoff_seconds, ingestion_mode) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(name, type, base_url, api_key_enc, poll_interval_seconds, retry_count, retry_backoff_seconds, "
+        "ingestion_mode, webhook_token) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (body.name, body.type, body.base_url, api_key_enc, body.poll_interval_seconds,
-         body.retry_count, body.retry_backoff_seconds, body.ingestion_mode),
+         body.retry_count, body.retry_backoff_seconds, body.ingestion_mode, secrets.token_hex(16)),
     )
     await db.commit()
     await audit.record(db, user=admin, action="service.create", target_type="service_instance",
@@ -183,6 +186,41 @@ async def delete_service(service_id: int, admin: AdminUser, db: aiosqlite.Connec
     await db.commit()
     await audit.record(db, user=admin, action="service.delete", target_type="service_instance",
                         target_id=service_id, detail={"name": existing["name"]})
+
+
+async def _get_row(db: aiosqlite.Connection, service_id: int) -> aiosqlite.Row:
+    async with db.execute("SELECT * FROM service_instances WHERE id = ?", (service_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return row
+
+
+@router.get("/{service_id}/webhook")
+async def get_webhook(service_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db)):
+    """The URL to paste into Sonarr/Radarr's own Connect -> Webhook settings
+    (scope: push instead of poll). Sonarr/Radarr push health changes here
+    instead of Cortexarr only finding out at the next poll — polling itself
+    never stops, since there's no webhook for 'an item just got stuck'."""
+    row = await _get_row(db, service_id)
+    if row["type"] not in ("sonarr", "radarr"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhooks are only built for Sonarr/Radarr")
+    return {"ingestion_mode": row["ingestion_mode"], "path": f"/api/webhooks/{service_id}/{row['webhook_token']}"}
+
+
+@router.post("/{service_id}/webhook/regenerate")
+async def regenerate_webhook_token(service_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db)):
+    """Roll a new token — the old webhook URL stops being accepted the
+    moment the new one is issued, same as an API token reissue."""
+    row = await _get_row(db, service_id)
+    if row["type"] not in ("sonarr", "radarr"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhooks are only built for Sonarr/Radarr")
+    token = secrets.token_hex(16)
+    await db.execute("UPDATE service_instances SET webhook_token = ? WHERE id = ?", (token, service_id))
+    await db.commit()
+    await audit.record(db, user=admin, action="service.webhook_token_regenerate", target_type="service_instance",
+                       target_id=service_id, detail={"name": row["name"]})
+    return {"ingestion_mode": row["ingestion_mode"], "path": f"/api/webhooks/{service_id}/{token}"}
 
 
 class TestConnectionRequest(BaseModel):
@@ -499,6 +537,48 @@ async def delete_series_route(
     return {"ok": True}
 
 
+async def _seerr_matches(db: aiosqlite.Connection, kind: str, tvdb_id, tmdb_id) -> list[dict]:
+    """Every non-declined Seerr request for this series/movie, across every
+    configured Seerr instance (scope: coordinated delete) — matched the same
+    way request tracking matches Seerr to Sonarr/Radarr (app/tracking.py),
+    just in the other direction. Lets deleting the item from Sonarr/Radarr
+    offer to remove the request too, so Seerr doesn't keep thinking it's
+    wanted and quietly try to fill it again."""
+    async with db.execute(
+        "SELECT id, name, base_url, api_key_enc FROM service_instances WHERE type = 'seerr' AND enabled = 1",
+    ) as cur:
+        seerr_rows = await cur.fetchall()
+    media_type = "tv" if kind == "sonarr" else "movie"
+    out = []
+    for s in seerr_rows:
+        try:
+            reqs = await seerr_client.get_requests(s["base_url"], decrypt_str(s["api_key_enc"]))
+        except (ConnectivityError, ServiceApiError):
+            continue
+        for r in reqs:
+            if r["state"] == "declined" or r["media_type"] != media_type:
+                continue
+            if (tvdb_id and r.get("tvdb_id") == tvdb_id) or (tmdb_id and r.get("tmdb_id") == tmdb_id):
+                out.append({"seerr_service_id": s["id"], "seerr_service_name": s["name"],
+                           "request_id": r["id"], "title": r["title"]})
+    return out
+
+
+@router.get("/{service_id}/series/{series_id}/seerr-requests")
+async def series_seerr_requests(
+    service_id: int, series_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Checked before deleting a series, so the confirm dialog can offer to
+    remove its Seerr request(s) too (scope: coordinated delete)."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        detail = await _client_fn(row, client, "get_series_detail")(row["base_url"], api_key, series_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return await _seerr_matches(db, "sonarr", detail.get("tvdb_id"), detail.get("tmdb_id"))
+
+
 @router.get("/{service_id}/series/{series_id}/history")
 async def series_history(
     service_id: int, series_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
@@ -631,6 +711,21 @@ async def delete_movie_route(
     await audit.record(db, user=admin, action="movie.delete", target_type="service_instance",
                         target_id=service_id, detail={"movie_id": movie_id, "delete_files": delete_files})
     return {"ok": True}
+
+
+@router.get("/{service_id}/movies/{movie_id}/seerr-requests")
+async def movie_seerr_requests(
+    service_id: int, movie_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Checked before deleting a movie, so the confirm dialog can offer to
+    remove its Seerr request(s) too (scope: coordinated delete)."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        detail = await _client_fn(row, client, "get_movie_detail")(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return await _seerr_matches(db, "radarr", None, detail.get("tmdb_id"))
 
 
 # ---------------------------------------------------------------------------

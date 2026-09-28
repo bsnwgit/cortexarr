@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 // Requires typing the literal word "Delete" before the confirm button
 // enables — used for every destructive action here (series delete, episode
 // file delete). The action itself can't be undone from Cortexarr; this is
 // the one guard against a stray click.
 export default function ConfirmDeleteModal({
-  title, warning, confirmLabel = 'Delete', busy, onConfirm, onCancel,
+  title, warning, confirmLabel = 'Delete', busy, onConfirm, onCancel, children,
 }: {
   title: string
   warning: string
@@ -13,6 +13,7 @@ export default function ConfirmDeleteModal({
   busy: boolean
   onConfirm: () => void
   onCancel: () => void
+  children?: ReactNode
 }) {
   const [typed, setTyped] = useState('')
   const canConfirm = typed === 'Delete' && !busy
@@ -24,6 +25,7 @@ export default function ConfirmDeleteModal({
         <p className="text-sm text-red-300 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2 mb-4">
           {warning} This can't be undone.
         </p>
+        {children && <div className="mb-4">{children}</div>}
         <label className="block text-xs text-slate-400 mb-1">
           Type <span className="font-semibold text-slate-200">Delete</span> to confirm
         </label>

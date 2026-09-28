@@ -52,6 +52,13 @@ interface HistoryRow {
   date: string | null
 }
 
+interface SeerrMatch {
+  seerr_service_id: number
+  seerr_service_name: string
+  request_id: number
+  title: string
+}
+
 // "2026-11" for a release date — the Calendar tab's ?month= format.
 function monthParam(raw: string) {
   const d = new Date(raw)
@@ -81,6 +88,8 @@ export default function MovieDetail() {
   const [deleteMovieOpen, setDeleteMovieOpen] = useState(false)
   const [deleteFileOpen, setDeleteFileOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [seerrMatches, setSeerrMatches] = useState<SeerrMatch[]>([])
+  const [removeSeerr, setRemoveSeerr] = useState(false)
   const accent = getServiceAccent(serviceType)
 
   useEffect(() => {
@@ -146,10 +155,29 @@ export default function MovieDetail() {
     }
   }
 
+  async function openDeleteMovie() {
+    setSeerrMatches([])
+    setRemoveSeerr(false)
+    setDeleteMovieOpen(true)
+    try {
+      const matches = await api.get<SeerrMatch[]>(`/services/${id}/movies/${movieId}/seerr-requests`)
+      setSeerrMatches(matches)
+      setRemoveSeerr(matches.length > 0)
+    } catch {
+      // Coordinated delete is a bonus, not a blocker — deleting the movie
+      // itself still works if this lookup fails.
+    }
+  }
+
   async function confirmDeleteMovie() {
     setDeleteBusy(true)
     try {
       await api.delete(`/services/${id}/movies/${movieId}`)
+      if (removeSeerr) {
+        for (const m of seerrMatches) {
+          await api.post(`/services/${m.seerr_service_id}/requests/${m.request_id}/clear`, {})
+        }
+      }
       navigate(`/services/${id}?tab=movies`)
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Failed to delete')
@@ -249,7 +277,7 @@ export default function MovieDetail() {
                     sit flush against the harmless actions. */}
                 <div className="w-6" />
                 <button
-                  onClick={() => setDeleteMovieOpen(true)}
+                  onClick={openDeleteMovie}
                   title="Delete movie"
                   className="p-2 rounded-lg border border-slate-700 text-slate-400 hover:text-red-300 hover:border-red-900 hover:bg-red-950/30 transition-colors"
                 >
@@ -363,7 +391,24 @@ export default function MovieDetail() {
           busy={deleteBusy}
           onConfirm={confirmDeleteMovie}
           onCancel={() => setDeleteMovieOpen(false)}
-        />
+        >
+          {seerrMatches.length > 0 && (
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-violet-500"
+                checked={removeSeerr}
+                onChange={(e) => setRemoveSeerr(e.target.checked)}
+              />
+              <span className="text-sm text-slate-300">
+                Also remove {seerrMatches.length === 1 ? 'its Seerr request' : `its ${seerrMatches.length} Seerr requests`}
+                <span className="block text-xs text-slate-400">
+                  Otherwise Seerr still thinks this is wanted and may try to fill it again.
+                </span>
+              </span>
+            </label>
+          )}
+        </ConfirmDeleteModal>
       )}
 
       {deleteFileOpen && movie?.movie_file && (

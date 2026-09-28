@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext'
 import ServiceIcon from '../components/ServiceIcon'
 import StatusPill, { type StatusInfo } from '../components/StatusPill'
 import { getServiceAccent } from '../utils/serviceAccent'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface Service {
   id: number
@@ -21,6 +22,10 @@ interface Service {
   retry_backoff_seconds: number
 }
 
+// Sonarr/Radarr only — the other types have no webhook connection to push
+// events from.
+const WEBHOOK_TYPES = new Set(['sonarr', 'radarr'])
+
 const EMPTY_FORM = {
   name: '',
   type: 'sonarr',
@@ -29,6 +34,7 @@ const EMPTY_FORM = {
   poll_interval_seconds: 60,
   retry_count: 3,
   retry_backoff_seconds: 5,
+  ingestion_mode: 'poll',
 }
 
 export default function Services() {
@@ -49,6 +55,10 @@ export default function Services() {
   const [rowBusy, setRowBusy] = useState<Record<number, string>>({})
   const [rowTestResult, setRowTestResult] = useState<Record<number, { ok: boolean; message: string }>>({})
   const [statusById, setStatusById] = useState<Record<number, StatusInfo>>({})
+  const [webhookOpen, setWebhookOpen] = useState<number | null>(null)
+  const [webhookInfo, setWebhookInfo] = useState<Record<number, { ingestion_mode: string; path: string }>>({})
+  const [webhookBusy, setWebhookBusy] = useState<number | null>(null)
+  const [webhookCopied, setWebhookCopied] = useState(false)
   // NZBGet has no API key — it logs in with its own username/password,
   // sent (and stored encrypted) as "username:password" in the key field.
   const [nzbUser, setNzbUser] = useState('')
@@ -106,6 +116,51 @@ export default function Services() {
     await api.patch(`/services/${s.id}`, { maintenance_mode: !s.maintenance_mode })
     await Promise.all([load(), loadStatus()])
     setRowBusy((b) => ({ ...b, [s.id]: '' }))
+  }
+
+  async function openWebhook(s: Service) {
+    if (webhookOpen === s.id) {
+      setWebhookOpen(null)
+      return
+    }
+    setWebhookOpen(s.id)
+    setWebhookCopied(false)
+    if (!webhookInfo[s.id]) {
+      const info = await api.get<{ ingestion_mode: string; path: string }>(`/services/${s.id}/webhook`)
+      setWebhookInfo((w) => ({ ...w, [s.id]: info }))
+    }
+  }
+
+  async function toggleWebhookMode(s: Service) {
+    setWebhookBusy(s.id)
+    try {
+      const next = s.ingestion_mode === 'webhook' ? 'poll' : 'webhook'
+      await api.patch(`/services/${s.id}`, { ingestion_mode: next })
+      if (next === 'webhook' && !webhookInfo[s.id]) {
+        const info = await api.get<{ ingestion_mode: string; path: string }>(`/services/${s.id}/webhook`)
+        setWebhookInfo((w) => ({ ...w, [s.id]: info }))
+      }
+      await load()
+    } finally {
+      setWebhookBusy(null)
+    }
+  }
+
+  async function regenerateWebhookToken(s: Service) {
+    if (!confirm('The current webhook URL will stop working the moment the new one is issued. Continue?')) return
+    setWebhookBusy(s.id)
+    try {
+      const info = await api.post<{ ingestion_mode: string; path: string }>(`/services/${s.id}/webhook/regenerate`, {})
+      setWebhookInfo((w) => ({ ...w, [s.id]: info }))
+    } finally {
+      setWebhookBusy(null)
+    }
+  }
+
+  async function copyWebhookUrl(path: string) {
+    const ok = await copyToClipboard(`${window.location.origin}${path}`)
+    setWebhookCopied(ok)
+    setTimeout(() => setWebhookCopied(false), 1500)
   }
 
   async function remove(s: Service) {
@@ -190,6 +245,25 @@ export default function Services() {
             </Field>
           </div>
 
+          {WEBHOOK_TYPES.has(form.type) && (
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-violet-500"
+                checked={form.ingestion_mode === 'webhook'}
+                onChange={(e) => setForm({ ...form, ingestion_mode: e.target.checked ? 'webhook' : 'poll' })}
+              />
+              <span className="text-sm text-slate-300">
+                Also accept webhooks from {form.type === 'sonarr' ? 'Sonarr' : 'Radarr'}
+                <span className="block text-xs text-slate-400">
+                  Reacts to a health change the moment it happens instead of waiting for the next poll. Doesn't
+                  replace polling — the webhook URL to paste into {form.type === 'sonarr' ? 'Sonarr' : 'Radarr'} shows
+                  up here once the service is saved.
+                </span>
+              </span>
+            </label>
+          )}
+
           <div className="flex items-center gap-3">
             <button onClick={testUnsaved} disabled={testing || !form.base_url || !credential} className="btn-secondary">
               {testing ? 'Testing…' : 'Test connection'}
@@ -244,12 +318,18 @@ export default function Services() {
                     {s.base_url}
                   </a>{' '}
                   · every {s.poll_interval_seconds}s
+                  {s.ingestion_mode === 'webhook' && ' · webhooks on'}
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => testSaved(s.id)} disabled={rowBusy[s.id] === 'testing'} className="btn-secondary">
                   {rowBusy[s.id] === 'testing' ? 'Testing…' : 'Test'}
                 </button>
+                {WEBHOOK_TYPES.has(s.type) && (
+                  <button onClick={() => openWebhook(s)} className="btn-secondary">
+                    Webhook
+                  </button>
+                )}
                 <button onClick={() => toggleMaintenance(s)} className="btn-secondary">
                   {s.maintenance_mode ? 'End maintenance' : 'Maintenance mode'}
                 </button>
@@ -258,6 +338,50 @@ export default function Services() {
                 </button>
               </div>
             </div>
+            {webhookOpen === s.id && (
+              <div className="mt-3 bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                {s.ingestion_mode === 'webhook' ? (
+                  webhookInfo[s.id] ? (
+                    <>
+                      <p className="text-xs text-slate-400">
+                        Paste this into {s.type === 'sonarr' ? 'Sonarr' : 'Radarr'} → Settings → Connect → add a
+                        Webhook, method <code className="text-slate-300">POST</code>, with{' '}
+                        <span className="text-slate-300">Health Issue</span>,{' '}
+                        <span className="text-slate-300">Health Restored</span>, and the on-add{' '}
+                        <span className="text-slate-300">Test</span> ticked.
+                      </p>
+                      <div className="flex gap-2 items-center">
+                        <code className="flex-1 min-w-0 break-all select-all rounded-lg bg-slate-925 border border-slate-800 px-3 py-2 text-xs text-slate-100">
+                          {window.location.origin}{webhookInfo[s.id].path}
+                        </code>
+                        <button onClick={() => copyWebhookUrl(webhookInfo[s.id].path)} className="btn-secondary shrink-0">
+                          {webhookCopied ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <div className="flex gap-2 flex-wrap pt-1">
+                        <button onClick={() => regenerateWebhookToken(s)} disabled={webhookBusy === s.id} className="btn-secondary">
+                          {webhookBusy === s.id ? 'Working…' : 'Regenerate URL'}
+                        </button>
+                        <button onClick={() => toggleWebhookMode(s)} disabled={webhookBusy === s.id} className="btn-secondary">
+                          Turn off webhooks
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-400">Loading…</p>
+                  )
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-400">
+                      Webhooks are off — Cortexarr only polls this service, every {s.poll_interval_seconds}s.
+                    </p>
+                    <button onClick={() => toggleWebhookMode(s)} disabled={webhookBusy === s.id} className="btn-secondary">
+                      {webhookBusy === s.id ? 'Working…' : 'Turn on webhooks'}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {rowTestResult[s.id] && (
               <p className={clsx('text-xs mt-2', rowTestResult[s.id].ok ? 'text-teal-300' : 'text-red-300')}>
                 {rowTestResult[s.id].ok ? '✓ ' : '✗ '}{rowTestResult[s.id].message}
