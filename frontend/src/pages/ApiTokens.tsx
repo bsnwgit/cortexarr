@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
+import { copyToClipboard } from '../utils/clipboard'
 import { fmtDateTime } from '../utils/time'
 
 interface Token {
@@ -50,6 +51,7 @@ export default function ApiTokens() {
   const [made, setMade] = useState<{ name: string; token: string } | null>(null)
   const [copied, setCopied] = useState('')
   const [revoking, setRevoking] = useState<Token | null>(null)
+  const [reissuing, setReissuing] = useState<Token | null>(null)
   const [busy, setBusy] = useState(false)
 
   const mcpUrl = `${window.location.origin}/mcp`
@@ -90,34 +92,21 @@ export default function ApiTokens() {
     }
   }
 
-  // navigator.clipboard only exists on https/localhost, and a homelab
-  // install is usually plain http on a LAN address — so fall back to the
-  // older execCommand copy, and say so if even that fails.
-  async function copy(label: string, text: string) {
-    let ok = false
+  async function reissue() {
+    if (!reissuing) return
+    setBusy(true)
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-        ok = true
-      }
-    } catch {
-      ok = false
+      const res = await api.post<Token & { token: string }>(`/tokens/${reissuing.id}/reissue`, {})
+      setMade({ name: res.name, token: res.token })
+      setReissuing(null)
+      await load()
+    } finally {
+      setBusy(false)
     }
-    if (!ok) {
-      const area = document.createElement('textarea')
-      area.value = text
-      area.setAttribute('readonly', '')
-      area.style.position = 'fixed'
-      area.style.opacity = '0'
-      document.body.appendChild(area)
-      area.select()
-      try {
-        ok = document.execCommand('copy')
-      } catch {
-        ok = false
-      }
-      document.body.removeChild(area)
-    }
+  }
+
+  async function copy(label: string, text: string) {
+    const ok = await copyToClipboard(text)
     setCopied(ok ? label : `${label}-failed`)
     setTimeout(() => setCopied(''), ok ? 1500 : 4000)
   }
@@ -165,7 +154,7 @@ export default function ApiTokens() {
       {made && (
         <div className="bg-slate-925 border border-teal-700/60 rounded-xl p-4 mb-4 space-y-3">
           <p className="text-sm text-teal-300 font-medium">
-            Token “{made.name}” created. Copy it now — it won't be shown again.
+            Token “{made.name}” ready. Copy it now — it won't be shown again.
           </p>
           <div className="flex gap-2 items-center">
             <code className="flex-1 min-w-0 break-all select-all rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100">
@@ -286,12 +275,17 @@ export default function ApiTokens() {
                 expires {fmt(t.expires_at, 'never')} · last used {fmt(t.last_used_at, 'never')}
               </div>
             </div>
-            <button
-              onClick={() => setRevoking(t)}
-              className="self-start sm:self-auto rounded-lg border border-red-900 text-red-300 hover:bg-red-950/50 text-sm px-3 py-1.5"
-            >
-              Revoke
-            </button>
+            <div className="flex gap-2 self-start sm:self-auto">
+              <button onClick={() => setReissuing(t)} className="btn-secondary">
+                Reissue
+              </button>
+              <button
+                onClick={() => setRevoking(t)}
+                className="rounded-lg border border-red-900 text-red-300 hover:bg-red-950/50 text-sm px-3 py-1.5"
+              >
+                Revoke
+              </button>
+            </div>
           </div>
         ))}
         {tokens.length === 0 && !showForm && <p className="text-slate-400 text-sm">No tokens yet.</p>}
@@ -305,6 +299,17 @@ export default function ApiTokens() {
           busy={busy}
           onConfirm={revoke}
           onCancel={() => setRevoking(null)}
+        />
+      )}
+
+      {reissuing && (
+        <ConfirmDeleteModal
+          title={`Reissue “${reissuing.name}”?`}
+          warning="A new secret replaces the old one. Anything still using the old token stops working immediately — you'll need to update it with the new value."
+          confirmLabel="Reissue"
+          busy={busy}
+          onConfirm={reissue}
+          onCancel={() => setReissuing(null)}
         />
       )}
     </div>

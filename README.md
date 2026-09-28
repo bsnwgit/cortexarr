@@ -21,9 +21,16 @@ leaving the page.
   failed (pulled from Seerr's log), with **Retry**.
 - **Sonarr** — your series library, each series with its seasons and
   episodes (monitor, search, delete), the download queue, missing episodes
-  grouped by series, and a month-grid calendar.
+  grouped by series, and a month-grid calendar. Deleting a series offers
+  removing its matching Seerr request too, so Seerr doesn't keep thinking
+  it's wanted and quietly try to fill it again. Can also accept its own
+  webhook (Settings → Services → Webhook) so a health change reaches
+  Cortexarr the moment it happens rather than waiting for the next poll —
+  polling itself never stops, since there's no webhook for "an item's been
+  stuck in the queue a while."
 - **Radarr** — the same for movies: library, movie pages with release
-  dates and the file on disk, queue, missing, and a release calendar.
+  dates and the file on disk, queue, missing, and a release calendar. Same
+  coordinated delete, same optional webhook.
 - **NZBGet / SABnzbd** — live speed, time left, free disk, the queue with
   progress and post-processing stage, and history with failure reasons and
   **Retry**. Pause/resume a download or everything at once.
@@ -34,12 +41,15 @@ leaving the page.
 - **Dashboard** — requests run full width across the top; below, one card
   per service with nested cards for whatever needs attention. Each card can
   be refreshed on its own or opened in the service's own web UI.
-- **Notifications** — a top-nav tab, next to Tracking, with three views:
-  Alerts (below), an activity feed across every service (filterable by
-  pipeline), and an audit log of every change made in Cortexarr.
+- **Notifications** — a top-nav tab, next to Tracking, with four views:
+  Alerts and Rules (below), an activity feed across every service
+  (filterable by pipeline), and an audit log of every change made in
+  Cortexarr.
 - **MCP server** — AI tools (any MCP client) can do everything the web UI
   does, through personal API tokens that are read-only by default and never
-  delete anything unless you allow it.
+  delete anything unless you allow it. Upload your own certificate under
+  Settings → Server to serve everything — the web UI, the API, and `/mcp` —
+  over HTTPS, for clients that refuse a plain-HTTP endpoint.
 - Per-service health polling with retry/backoff, a connection test that
   also checks the URL really is the service you picked, role-based access
   (admin / analyst / viewer) with a **Users** page to manage them, and
@@ -51,7 +61,14 @@ leaving the page.
   which channels, with an optional "resolved" message when it clears and
   reminders while it lasts. Snooze or acknowledge a known problem without
   muting the whole rule, and set a digest window so a bad night is one
-  message every so often, not dozens.
+  message every so often, not dozens. Suggested starter rules (a service
+  unreachable, a queue item stuck, a request stalled) are offered as
+  one-click templates while the rule list is empty.
+- **Backup** — export the service list and notification configuration (not
+  the database) to move a setup or back it up, credentials excluded unless
+  you choose to include them — which requires a password and encrypts the
+  file, rather than writing secrets out in plain text. Re-importing skips
+  anything already there by name, so it's safe to run the same file twice.
 
 ## Requested features
 
@@ -60,21 +77,13 @@ Planned but not built yet — kept here so none of it gets lost:
 - **Mass filtering at series level** — filter the series library by state
   (e.g. series with missing episodes) and select the matching series to act
   on together.
-- **Suggested alert rules** — a starter set of common alerts (a service
-  unreachable, a queue item stuck, a request stalled) offered as one-click
-  templates when no rules exist yet, so it's obvious what's worth alerting
-  on instead of finding out nothing fires until you add one yourself.
 - **Force sync with reality** — compare what Seerr says (requested,
   processing, available) with what's really in Sonarr/Radarr, the download
   client, and on disk; show every mismatch, and bring them back in line in
   one step.
-- **Push instead of poll** — accept Sonarr/Radarr webhooks rather than only
-  polling them.
 - **History and trends** — reporting over time, beyond the live views.
 - **AI provider integration** — pluggable AI providers inside Cortexarr
   itself (the MCP server for outside AI tools is built).
-- **Config export / import** — back up or move the service list and
-  settings (credentials excluded unless you choose to include them).
 - **Self-update** — manual or automatic updates from GitHub releases, within
   a maintenance window you set.
 - **Docker install** — alongside the native `install.sh`.

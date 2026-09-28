@@ -17,6 +17,13 @@ interface Service {
   type: string
 }
 
+interface SeerrMatch {
+  seerr_service_id: number
+  seerr_service_name: string
+  request_id: number
+  title: string
+}
+
 interface SeriesDetail {
   id: number
   title: string
@@ -114,6 +121,8 @@ export default function SeriesSeasons() {
   const [deleteSeriesOpen, setDeleteSeriesOpen] = useState(false)
   const [deleteEpisode, setDeleteEpisode] = useState<EpisodeItem | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [seerrMatches, setSeerrMatches] = useState<SeerrMatch[]>([])
+  const [removeSeerr, setRemoveSeerr] = useState(false)
 
   const [historyOpen, setHistoryOpen] = useState<number | null>(null)
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([])
@@ -337,11 +346,31 @@ export default function SeriesSeasons() {
   }
 
 
+  async function openDeleteSeries() {
+    setSeerrMatches([])
+    setRemoveSeerr(false)
+    setDeleteSeriesOpen(true)
+    if (!id || !seriesId) return
+    try {
+      const matches = await api.get<SeerrMatch[]>(`/services/${id}/series/${seriesId}/seerr-requests`)
+      setSeerrMatches(matches)
+      setRemoveSeerr(matches.length > 0)
+    } catch {
+      // Coordinated delete is a bonus, not a blocker — deleting the series
+      // itself still works if this lookup fails.
+    }
+  }
+
   async function confirmDeleteSeries() {
     if (!id || !seriesId) return
     setDeleteBusy(true)
     try {
       await api.delete(`/services/${id}/series/${seriesId}`)
+      if (removeSeerr) {
+        for (const m of seerrMatches) {
+          await api.post(`/services/${m.seerr_service_id}/requests/${m.request_id}/clear`, {})
+        }
+      }
       navigate(`/services/${id}?tab=series`)
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Failed to delete')
@@ -463,7 +492,7 @@ export default function SeriesSeasons() {
                     flush against the other, harmless header actions. */}
                 <div className="w-6" />
                 <button
-                  onClick={() => setDeleteSeriesOpen(true)}
+                  onClick={openDeleteSeries}
                   title="Delete series"
                   className="p-2 rounded-lg border border-slate-700 text-slate-400 hover:text-red-300 hover:border-red-900 hover:bg-red-950/30 transition-colors"
                 >
@@ -658,7 +687,24 @@ export default function SeriesSeasons() {
           busy={deleteBusy}
           onConfirm={confirmDeleteSeries}
           onCancel={() => setDeleteSeriesOpen(false)}
-        />
+        >
+          {seerrMatches.length > 0 && (
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-violet-500"
+                checked={removeSeerr}
+                onChange={(e) => setRemoveSeerr(e.target.checked)}
+              />
+              <span className="text-sm text-slate-300">
+                Also remove {seerrMatches.length === 1 ? 'its Seerr request' : `its ${seerrMatches.length} Seerr requests`}
+                <span className="block text-xs text-slate-400">
+                  Otherwise Seerr still thinks this is wanted and may try to fill it again.
+                </span>
+              </span>
+            </label>
+          )}
+        </ConfirmDeleteModal>
       )}
 
       {deleteEpisode && (

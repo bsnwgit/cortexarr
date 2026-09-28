@@ -2,11 +2,18 @@
 Background health-polling loop.
 
 Ticks every _TICK_SECONDS and, for each enabled/non-maintenance service
-instance whose ingestion_mode is 'poll', checks whether poll_interval_seconds
-(scope #18 — per-service, not global) have elapsed since its last snapshot
-before checking again. Each check applies the instance's own retry_count /
-retry_backoff_seconds (scope #17 and #11 — Cortexarr's own polling must back
-off on failure rather than hammering an already-unhealthy instance).
+instance, checks whether poll_interval_seconds (scope #18 — per-service, not
+global) have elapsed since its last snapshot before checking again. Each
+check applies the instance's own retry_count / retry_backoff_seconds (scope
+#17 and #11 — Cortexarr's own polling must back off on failure rather than
+hammering an already-unhealthy instance).
+
+Runs for every instance regardless of ingestion_mode, webhook-configured
+Sonarr/Radarr ones included (app/api/webhooks.py): Sonarr/Radarr's webhook
+has no event for "an item has been stuck in the queue a while", so that half
+of what a check does has no push equivalent to replace it with. A webhook
+just means the health half of the next check may already be answered —
+Sonarr/Radarr told us sooner than we'd have found out by asking.
 
 Connectivity failures (can't reach it / bad key) and app-reported health
 issues are recorded distinctly (scope #8) via HealthResult.connectivity_ok.
@@ -114,7 +121,7 @@ async def run_forever() -> None:
                     "(SELECT checked_at FROM health_snapshots hs WHERE hs.service_instance_id = si.id "
                     " ORDER BY checked_at DESC LIMIT 1) AS last_checked_at "
                     "FROM service_instances si "
-                    "WHERE si.enabled = 1 AND si.maintenance_mode = 0 AND si.ingestion_mode = 'poll' "
+                    "WHERE si.enabled = 1 AND si.maintenance_mode = 0 "
                     f"AND si.type IN ({', '.join('?' for _ in types)})",
                     types,
                 ) as cur:

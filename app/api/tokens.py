@@ -94,6 +94,30 @@ async def create_token(body: TokenCreate, user: CurrentUser, db: aiosqlite.Conne
     return {**_out(row), "token": token}
 
 
+@router.post("/{token_id}/reissue")
+async def reissue_token(token_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db)):
+    """Roll a new secret onto an existing token — same name, access, and
+    expiry, but the old secret stops working immediately. Lets a leaked or
+    rotated token be replaced without losing its settings the way
+    revoke-and-recreate would."""
+    async with db.execute(_SELECT + " WHERE t.id = ?", (token_id,)) as cur:
+        row: Optional[aiosqlite.Row] = await cur.fetchone()
+    if row is None or (row["user_id"] != user["id"] and user["role"] != "admin"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found")
+    token = PREFIX + secrets.token_urlsafe(32)
+    await db.execute(
+        "UPDATE api_tokens SET token_hash = ?, prefix = ?, last_used_at = NULL WHERE id = ?",
+        (hash_token(token), token[:SHOWN_CHARS], token_id),
+    )
+    await db.commit()
+    await audit.record(db, user=user, action="token.reissue", target_type="api_token", target_id=token_id,
+                       detail={"name": row["name"], "owner": row["username"]})
+    async with db.execute(_SELECT + " WHERE t.id = ?", (token_id,)) as got:
+        updated = await got.fetchone()
+    # Same as create: the only time the new secret is ever sent.
+    return {**_out(updated), "token": token}
+
+
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_token(token_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db)) -> None:
     async with db.execute(_SELECT + " WHERE t.id = ?", (token_id,)) as cur:

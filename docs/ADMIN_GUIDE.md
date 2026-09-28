@@ -27,10 +27,36 @@ so a fast-changing instance can be checked more often than a slow one
 without affecting the others.
 
 **Settings → Services** lists every service with **Test** (re-run the
-connection check), **Maintenance mode**, and **Delete**.
+connection check), **Maintenance mode**, and **Delete**. Sonarr and Radarr
+also get a **Webhook** button.
 
 A read-only JSON summary of every service's health is served, without
 login, at `/api/status/` — for embedding in a homelab dashboard.
+
+## Sonarr/Radarr webhooks
+
+**Push instead of poll**: a Sonarr or Radarr instance can push its own
+health changes to Cortexarr instead of Cortexarr only finding out at the
+next poll. **Services → (the instance) → Webhook → Turn on webhooks** shows
+the URL to paste into that instance's own **Settings → Connect → add a
+Webhook** (method `POST`), with **Health Issue**, **Health Restored**, and
+the on-add **Test** ticked.
+
+- The URL carries a random per-service token — nothing else authenticates
+  it, since Sonarr/Radarr's webhook connection can't reliably be made to
+  send a custom header across every version. **Regenerate URL** rolls a new
+  one; the old URL stops being accepted the moment the new one is issued,
+  same as reissuing an API token.
+- This never replaces polling. Sonarr/Radarr has no webhook event for "an
+  item has been sitting in the queue too long" — only asking the queue
+  periodically can find that — so the background poll keeps checking every
+  service, webhook-enabled or not. A webhook just means the health half of
+  a check doesn't have to wait for the next tick: Sonarr/Radarr tells
+  Cortexarr the moment something changes, and it's alerted on immediately,
+  the same way a poll result would be.
+- **Turn off webhooks** goes back to polling only; the URL still exists but
+  Sonarr/Radarr won't be sending it anything once you remove the connection
+  there too.
 
 ## Maintenance mode
 
@@ -186,6 +212,30 @@ Cortexarr always keeps at least one active admin: demoting, deactivating,
 or deleting the last one is refused, so the instance can never end up with
 nobody able to manage it.
 
+## Backup
+
+**Settings → General → Backup** exports the service list and notification
+configuration — not the SQLite database, and not users, health history, or
+the alert/audit log — as a single JSON file, so a setup can be backed up or
+moved to a fresh install.
+
+- API keys and channel secrets (SMTP password, ntfy/webhook auth, Twilio
+  auth token) are left out by default. Ticking **Include API keys and
+  channel secrets** requires a password: the file comes back as a
+  password-encrypted envelope (PBKDF2-HMAC-SHA256 deriving a Fernet key —
+  the same encryption used for credentials at rest), never plain JSON with
+  secrets sitting in it. Encryption is also available, same mechanism, for
+  a credentials-free export.
+- Cortexarr never stores the password — losing it means the file can't be
+  read back. Importing an encrypted file asks for it again.
+- **Import** reuses the same checks the web UI uses to add a service or a
+  rule — a bad type, a duplicate name, or a rule pointing at a service the
+  file doesn't also include is reported, not silently dropped.
+- A service or alert rule whose name already exists here is left alone, not
+  duplicated — importing the same file twice is safe. Notification settings
+  are always applied, except a blank secret from a credentials-excluded file
+  never overwrites a real one already configured.
+
 ## MCP server and API tokens
 
 Cortexarr serves MCP (streamable HTTP) at `/mcp`, on the same port as the
@@ -197,13 +247,22 @@ couldn't do by hand. How users make tokens is in the
 - An admin's **API tokens** page lists every user's tokens and can revoke
   any of them — a leaked token has to be stoppable by someone other than
   its owner.
+- **Reissue** rolls a new secret onto an existing token — same name,
+  access, and expiry — without reconfiguring anything else about it; the
+  old secret stops working the moment the new one is issued. Prefer this
+  over revoke-and-recreate when a token just needs rotating, not removing.
 - Only admins can make write tokens, or tokens that allow destructive tools.
-- Only a hash of each token is stored; a lost token is revoked and remade,
-  not recovered.
+- Only a hash of each token is stored; a lost token is reissued or
+  revoked and remade, not recovered.
 - Requests from a web page on another site (a foreign `Origin` header) are
   refused.
 - If Cortexarr sits behind a reverse proxy, forward `/mcp` as well as `/`
   and `/api`.
+- Some MCP clients refuse a plain-HTTP endpoint. **Settings → General →
+  Server (HTTPS)** lets you upload your own certificate and private key
+  (PEM) and turn HTTPS on — for the whole app, not just `/mcp`, since they
+  all share one listener. Turning it on or off, or replacing the
+  certificate, only takes effect after the service is restarted.
 
 ## Audit log
 

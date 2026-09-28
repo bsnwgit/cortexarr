@@ -15,6 +15,8 @@ host: "0.0.0.0"
 port: 8770
 workers: 2
 debug: false
+# HTTPS (certificate upload, turning it on/off) is set under Settings ->
+# Server in the web UI, not here — it needs a restart to take effect either way.
 
 # -- App root — install.sh appends this automatically --------------------------
 # install_dir: "/opt/cortexarr"

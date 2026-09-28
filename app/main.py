@@ -23,7 +23,7 @@ from app.config import get_settings
 from app.database import init_db, seed_admin
 
 from app.api import auth, users, services, settings as settings_router, status as status_router, audit as audit_router
-from app.api import alerts, tokens, tracking
+from app.api import alerts, tokens, tracking, config_export, server_tls, webhooks
 from app.mcp import server as mcp_server
 
 settings = get_settings()
@@ -86,6 +86,10 @@ app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 app.include_router(tokens.router, prefix="/api/tokens", tags=["tokens"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(tracking.router, prefix="/api/tracking", tags=["tracking"])
+app.include_router(config_export.router, prefix="/api/config", tags=["config"])
+app.include_router(server_tls.router, prefix="/api/server", tags=["server"])
+# Token-in-URL, for Sonarr/Radarr's own webhook connection — see app/api/webhooks.py.
+app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 # Token-authenticated, for outside AI tools — see app/mcp/server.py.
 app.include_router(mcp_server.router, tags=["mcp"])
 # Public, unauthenticated — see app/api/status.py's module docstring.
@@ -122,4 +126,13 @@ if _frontend_dist.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host=settings.host, port=settings.port, log_level=settings.log_level.lower())
+    ssl_kwargs = {}
+    if settings.tls_enabled:
+        if not (Path(settings.tls_certfile).exists() and Path(settings.tls_keyfile).exists()):
+            raise RuntimeError(
+                "HTTPS is turned on but no certificate is on disk — upload one under "
+                "Settings → Server, or turn it back off, then restart."
+            )
+        ssl_kwargs = {"ssl_certfile": settings.tls_certfile, "ssl_keyfile": settings.tls_keyfile}
+    uvicorn.run("app.main:app", host=settings.host, port=settings.port,
+               log_level=settings.log_level.lower(), **ssl_kwargs)
