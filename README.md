@@ -119,8 +119,14 @@ Planned but not built yet — kept here so none of it gets lost:
 | **Seerr** — requests, approve/decline | **Seerr** — issues, with why a request failed |
 | ![Download queue](docs/images/downloads-queue.png) | ![Download history](docs/images/downloads-history.png) |
 | **NZBGet / SABnzbd** — queue | **NZBGet / SABnzbd** — history and failure reasons |
+| ![Request tracking](docs/images/tracking.png) | ![Force sync with reality](docs/images/tracking-force-sync.png) |
+| **Tracking** — every request's pipeline stage | **Tracking** — a Seerr/reality mismatch and an orphaned request, each with its fix |
+| ![History and trends](docs/images/history.png) | ![Self-update](docs/images/settings-self-update.png) |
+| **History** — uptime, alert frequency, and request-completion trends | **Self-update** — checks GitHub releases against the running version |
 
 ![Sonarr/Radarr queue with Import/Remove/Redownload](docs/images/downloading-queue-actions.png)
+
+![Alerts — current problems with one-click fixes](docs/images/alerts.png)
 
 ![Activity log](docs/images/activity-log.png)
 
