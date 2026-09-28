@@ -120,6 +120,8 @@ Planned but not built yet — kept here so none of it gets lost:
 | ![Download queue](docs/images/downloads-queue.png) | ![Download history](docs/images/downloads-history.png) |
 | **NZBGet / SABnzbd** — queue | **NZBGet / SABnzbd** — history and failure reasons |
 
+![Sonarr/Radarr queue with Import/Remove/Redownload](docs/images/downloading-queue-actions.png)
+
 ![Activity log](docs/images/activity-log.png)
 
 *Screenshots use a made-up demo library.*
