@@ -168,6 +168,9 @@ Everything persistent — `config.yaml`, the database, logs — lives in the
 `docker compose pull && docker compose up -d`, not self-update's in-place
 apply (self-update inside Docker only ever notifies — see the Admin Guide).
 
+To remove: `docker compose down` (keeps the `cortexarr-data` volume, so
+your config and database survive; add `-v` to delete that too).
+
 ## Getting started
 
 1. Open Cortexarr in a browser and sign in as `admin` with the password the
