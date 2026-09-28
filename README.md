@@ -23,8 +23,9 @@ leaving the page.
   with requests that failed to reach Sonarr/Radarr, including *why* they
   failed (pulled from Seerr's log), with **Retry**.
 - **Sonarr** — your series library, each series with its seasons and
-  episodes (monitor, search, delete), the download queue, missing episodes
-  grouped by series, and a month-grid calendar. The library filters by
+  episodes (monitor, search, delete), the download queue — with **Import**,
+  **Remove & search**, and **Remove** right on a stuck item — missing
+  episodes grouped by series, and a month-grid calendar. The library filters by
   monitored state, continuing/ended, or missing episodes — filter to
   missing, select the ones you want, and search all of them at once.
   Deleting a series offers
