@@ -495,6 +495,25 @@ async def bulk_series_search(
     return {"results": results, "ok": sum(r["status"] == "ok" for r in results)}
 
 
+@router.post("/{service_id}/series/{series_id}/rescan")
+async def trigger_series_rescan(
+    service_id: int, series_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Force sync with reality: ask Sonarr to re-check the files on disk,
+    in case they disagree with what Sonarr's own episode-file counts
+    believe."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "rescan_series")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, series_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="series.rescan", target_type="service_instance",
+                        target_id=service_id, detail={"series_id": series_id})
+    return {"ok": True}
+
+
 @router.post("/{service_id}/episodes/{episode_id}/search")
 async def trigger_episode_search(
     service_id: int, episode_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
@@ -685,6 +704,24 @@ async def trigger_movie_search(
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await audit.record(db, user=admin, action="movie.search", target_type="service_instance",
+                        target_id=service_id, detail={"movie_id": movie_id})
+    return {"ok": True}
+
+
+@router.post("/{service_id}/movies/{movie_id}/rescan")
+async def trigger_movie_rescan(
+    service_id: int, movie_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Force sync with reality: ask Radarr to re-check the file on disk,
+    in case it disagrees with what Radarr's own has_file flag believes."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "rescan_movie")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        await fn(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="movie.rescan", target_type="service_instance",
                         target_id=service_id, detail={"movie_id": movie_id})
     return {"ok": True}
 

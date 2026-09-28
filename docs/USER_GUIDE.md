@@ -88,6 +88,18 @@ actually found a release for it. **Search again** tries once more; if
 nothing turns up, the indexers may not have it, or the quality profile may
 be too strict.
 
+A request badged **Orphaned** means nothing in Sonarr/Radarr matches it at
+all any more — usually because the series or movie was deleted after Seerr
+sent or marked the request, without going through Seerr. **Clear** removes
+the stale request from Seerr; there's nothing else to fix it with, since
+the thing it was tracking is gone.
+
+An available request has a **Verify still on disk** link. It doesn't fix
+anything by itself — it asks Sonarr/Radarr to re-check the actual file,
+since Cortexarr only ever knows what Sonarr/Radarr last reported. If the
+file was moved or deleted outside the pipeline, Sonarr/Radarr's next check
+will notice and the request stops showing as available.
+
 ## History
 
 **History** shows the same signals as the rest of the app, but over time

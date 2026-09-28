@@ -6,7 +6,10 @@ through the alert rules (the stalled_* events).
 
 Also carries each request's `mismatch` flag (scope: force sync with
 reality) — Seerr says available, but Sonarr/Radarr is still searching and
-hasn't actually found anything — and the one-click fix for it.
+hasn't actually found anything — and the one-click fix for it. And
+`orphaned` — nothing in Sonarr/Radarr matches this request at all any
+more; its fix (Clear) is the existing request-clear route in
+app/api/services.py, reused as-is.
 """
 from __future__ import annotations
 
