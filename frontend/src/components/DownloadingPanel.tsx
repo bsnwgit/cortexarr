@@ -7,10 +7,10 @@ import type { ServiceAccent } from '../utils/serviceAccent'
 import { fmtDateTime } from '../utils/time'
 import PageSpinner from './PageSpinner'
 
-interface QueueItem {
+// The fields shared by Sonarr's and Radarr's queue rows — everything but
+// the title, which is series/episode for one and movie/year for the other.
+interface QueueRow {
   id: number
-  series: string
-  episode: string
   quality: string
   status: string
   tracked_status: string | null
@@ -18,6 +18,11 @@ interface QueueItem {
   timeleft: string | null
   download_client: string | null
   messages: string[]
+}
+
+interface QueueItem extends QueueRow {
+  series: string
+  episode: string
 }
 
 interface HistoryItem {
@@ -56,28 +61,78 @@ export function fmtState(s: string | null): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-const QUEUE_COLUMNS: Column<QueueItem>[] = [
-  { key: 'series', label: 'Series' },
-  { key: 'episode', label: 'Episode' },
-  { key: 'quality', label: 'Quality' },
-  { key: 'timeleft', label: 'Time left', render: (r) => r.timeleft ?? '—' },
-  {
-    key: 'status',
-    label: 'Status',
+// One busy/result pair per queue item id, shared across whichever action
+// (import/remove/redownload) is running or just finished on that row.
+export type QueueActionState = Record<number, { busy: string | null; result: { ok: boolean; text: string } | null }>
+
+function actionsColumn<T extends QueueRow>(onAction: (r: T, action: string) => void, state: QueueActionState): Column<T> {
+  return {
+    key: 'actions',
+    label: 'Actions',
+    sortable: false,
+    filterable: false,
     render: (r) => {
-      const label = fmtState(r.tracked_state) || r.status
-      const stuck = r.tracked_status === 'warning' || r.tracked_status === 'error'
-      return stuck ? <span className="text-amber-300">{label}</span> : label
+      const s = state[r.id]
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={() => onAction(r, 'import')}
+            disabled={!!s?.busy}
+            className="rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-medium px-2 py-1"
+          >
+            {s?.busy === 'import' ? 'Importing…' : 'Import'}
+          </button>
+          <button
+            onClick={() => onAction(r, 'redownload')}
+            disabled={!!s?.busy}
+            className="rounded-md bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 text-xs font-medium px-2 py-1"
+          >
+            {s?.busy === 'redownload' ? 'Working…' : 'Remove & search'}
+          </button>
+          <button
+            onClick={() => onAction(r, 'remove')}
+            disabled={!!s?.busy}
+            className="rounded-md bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 text-xs font-medium px-2 py-1"
+          >
+            {s?.busy === 'remove' ? 'Removing…' : 'Remove'}
+          </button>
+          {s?.result && (
+            <span className={clsx('text-xs', s.result.ok ? 'text-teal-300' : 'text-red-300')}>{s.result.text}</span>
+          )}
+        </div>
+      )
     },
-  },
-  { key: 'download_client', label: 'Client', render: (r) => r.download_client ?? '—' },
-  {
-    key: 'messages',
-    label: 'Messages',
-    className: 'text-amber-300',
-    render: (r) => (r.messages?.length ? r.messages.join('; ') : ''),
-  },
-]
+  }
+}
+
+// Shared by both Sonarr and Radarr queue tables — everything after the
+// series/movie title column, which is the one part that differs per type.
+function sharedQueueColumns<T extends QueueRow>(): Column<T>[] {
+  return [
+    { key: 'quality', label: 'Quality' },
+    { key: 'timeleft', label: 'Time left', render: (r) => r.timeleft ?? '—' },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (r) => {
+        const label = fmtState(r.tracked_state) || r.status
+        const stuck = r.tracked_status === 'warning' || r.tracked_status === 'error'
+        return stuck ? <span className="text-amber-300">{label}</span> : label
+      },
+    },
+    { key: 'download_client', label: 'Client', render: (r) => r.download_client ?? '—' },
+    {
+      key: 'messages',
+      label: 'Messages',
+      className: 'text-amber-300',
+      render: (r) => (r.messages?.length ? r.messages.join('; ') : ''),
+    },
+  ]
+}
+
+function queueColumns(onAction: (r: QueueItem, action: string) => void, state: QueueActionState): Column<QueueItem>[] {
+  return [{ key: 'series', label: 'Series' }, { key: 'episode', label: 'Episode' }, ...sharedQueueColumns<QueueItem>(), actionsColumn(onAction, state)]
+}
 
 const HISTORY_COLUMNS: Column<HistoryItem>[] = [
   { key: 'date', label: 'Date', render: (r) => fmtDate(r.date) },
@@ -99,10 +154,13 @@ interface RadarrHistoryItem extends Omit<HistoryItem, 'series' | 'episode'> {
 
 const movieTitle = (r: { movie: string; year: number | null }) => (r.year ? `${r.movie} (${r.year})` : r.movie)
 
-const RADARR_QUEUE_COLUMNS: Column<RadarrQueueItem>[] = [
-  { key: 'movie', label: 'Movie', render: movieTitle },
-  ...(QUEUE_COLUMNS.slice(2) as unknown as Column<RadarrQueueItem>[]),
-]
+function radarrQueueColumns(onAction: (r: RadarrQueueItem, action: string) => void, state: QueueActionState): Column<RadarrQueueItem>[] {
+  return [
+    { key: 'movie', label: 'Movie', render: movieTitle },
+    ...sharedQueueColumns<RadarrQueueItem>(),
+    actionsColumn(onAction, state),
+  ]
+}
 
 const RADARR_HISTORY_COLUMNS: Column<RadarrHistoryItem>[] = [
   { key: 'date', label: 'Date', render: (r) => fmtDate(r.date) },
@@ -115,11 +173,12 @@ const RADARR_HISTORY_COLUMNS: Column<RadarrHistoryItem>[] = [
 type Row = { id: number }
 const cols = <T,>(c: Column<T>[]) => c as unknown as Column<Row>[]
 
-// Per service type: its columns, and which URL param the dashboard card
-// uses to pre-scope the filter (and to which column).
-const PANEL_CONFIG: Record<string, { queue: Column<Row>[]; history: Column<Row>[]; filterParam: string }> = {
-  sonarr: { queue: cols(QUEUE_COLUMNS), history: cols(HISTORY_COLUMNS), filterParam: 'series' },
-  radarr: { queue: cols(RADARR_QUEUE_COLUMNS), history: cols(RADARR_HISTORY_COLUMNS), filterParam: 'movie' },
+// Per service type: its history columns and which URL param the dashboard
+// card uses to pre-scope the filter (and to which column). Queue columns
+// are built per-render instead, since they close over the action handler.
+const PANEL_CONFIG: Record<string, { history: Column<Row>[]; filterParam: string }> = {
+  sonarr: { history: cols(HISTORY_COLUMNS), filterParam: 'series' },
+  radarr: { history: cols(RADARR_HISTORY_COLUMNS), filterParam: 'movie' },
 }
 
 // Queue/History — what's actively moving through the pipeline, as distinct
@@ -137,6 +196,27 @@ export default function DownloadingPanel({
   const [rows, setRows] = useState<unknown[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [actionState, setActionState] = useState<QueueActionState>({})
+
+  async function runQueueAction(r: { id: number }, action: string) {
+    setActionState((s) => ({ ...s, [r.id]: { busy: action, result: null } }))
+    try {
+      const res = await api.post<{ files?: number }>(`/services/${serviceId}/queue/${r.id}/${action}`, {})
+      const text =
+        action === 'import'
+          ? `Import started${res.files ? ` (${res.files} file${res.files === 1 ? '' : 's'})` : ''}.`
+          : action === 'redownload'
+            ? 'Removed, blocklisted, and searching again.'
+            : 'Removed.'
+      setActionState((s) => ({ ...s, [r.id]: { busy: null, result: { ok: true, text } } }))
+      if (action !== 'import') setRows((rs) => rs.filter((row) => (row as { id: number }).id !== r.id))
+    } catch (err) {
+      setActionState((s) => ({ ...s, [r.id]: { busy: null, result: { ok: false, text: err instanceof ApiError ? err.message : 'Failed' } } }))
+    }
+  }
+
+  const queueCols =
+    serviceType === 'radarr' ? cols(radarrQueueColumns(runQueueAction, actionState)) : cols(queueColumns(runQueueAction, actionState))
 
   useEffect(() => {
     let cancelled = false
@@ -193,7 +273,7 @@ export default function DownloadingPanel({
         ) : (
           <DataTable
             key={subTab}
-            columns={subTab === 'queue' ? config.queue : config.history}
+            columns={subTab === 'queue' ? queueCols : config.history}
             rows={rows as Row[]}
             rowKey={(r) => r.id}
             emptyMessage={subTab === 'queue' ? 'Nothing in the queue.' : 'No history yet.'}

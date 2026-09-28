@@ -144,8 +144,9 @@ confirm.
   On a series page, click its *episodes* pill (e.g. "292 / 303 episodes") to
   show only missing episodes, again for only downloaded ones, and again for
   everything.
-- **Downloading** — the queue (with why an item is stuck, if it is) and
-  recent history.
+- **Downloading** — the queue (with why an item is stuck, if it is), each
+  row with **Import**, **Remove & search**, and **Remove**, and recent
+  history.
 - **Missing** — aired episodes with no file, grouped by series; each links
   to its season.
 - **Calendar** — a month grid of upcoming and missing episodes; click one
@@ -167,7 +168,8 @@ try to fill it again.
   disk (with delete-file), its release dates, and monitor / search /
   history / delete. An upcoming release date links to that month on the
   calendar.
-- **Downloading** — the queue and recent history.
+- **Downloading** — the queue, each row with **Import**, **Remove &
+  search**, and **Remove**, and recent history.
 - **Missing** — released movies with no file, with search and a monitor
   toggle on each.
 - **Calendar** — a month grid of release dates (in cinemas, digital,
