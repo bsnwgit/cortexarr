@@ -39,7 +39,7 @@ __all__ = [
     "get_series_detail", "get_season_episodes", "get_season_history",
     "get_series_calendar", "get_series_history",
     "set_series_monitored", "set_episode_monitored", "set_season_monitored",
-    "search_episode", "search_season",
+    "search_episode", "search_season", "search_series",
     "delete_episode_file", "delete_series",
     "remove_queue_item", "import_queue_item", "get_series_progress", "get_command",
 ]
@@ -417,6 +417,13 @@ async def search_season(base_url: str, api_key: str, series_id: int, season_numb
         base_url, api_key, "/api/v3/command",
         {"name": "SeasonSearch", "seriesId": series_id, "seasonNumber": season_number},
     )
+
+
+async def search_series(base_url: str, api_key: str, series_id: int) -> None:
+    """Trigger Sonarr to search for every missing monitored episode across
+    a whole series at once — the series library's "search all missing"
+    bulk action (scope: mass filtering at series level)."""
+    await _post(base_url, api_key, "/api/v3/command", {"name": "SeriesSearch", "seriesId": series_id})
 
 
 async def delete_episode_file(base_url: str, api_key: str, episode_file_id: int) -> None:

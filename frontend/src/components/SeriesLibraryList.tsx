@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
+import { api, ApiError } from '../api/client'
 import type { ServiceAccent } from '../utils/serviceAccent'
 import { PageControls, PageSizeSelect } from './Pagination'
 
@@ -34,7 +35,7 @@ function fmtBytes(n: number) {
 // left, title and stats right, whole row clicking through to that series's
 // full page (seasons, episodes, delete). Replaces the old plain data table
 // for the Series tab per the library redesign.
-type StatusFilter = 'all' | 'monitored' | 'unmonitored' | 'ended' | 'continuing'
+type StatusFilter = 'all' | 'monitored' | 'unmonitored' | 'ended' | 'continuing' | 'missing'
 
 const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All series' },
@@ -42,7 +43,15 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'unmonitored', label: 'Unmonitored' },
   { value: 'continuing', label: 'Series Continuing' },
   { value: 'ended', label: 'Series Ended' },
+  { value: 'missing', label: 'Missing episodes' },
 ]
+
+// Sonarr's own episodeCount is "monitored episodes that have aired (or
+// have a file)" — so fewer files than that means an aired episode with
+// nothing downloaded, the same definition the Missing tab uses.
+function hasMissing(s: SeriesLibraryItem): boolean {
+  return s.episode_file_count < s.episode_count
+}
 
 function matchesStatusFilter(s: SeriesLibraryItem, filter: StatusFilter): boolean {
   switch (filter) {
@@ -54,6 +63,8 @@ function matchesStatusFilter(s: SeriesLibraryItem, filter: StatusFilter): boolea
       return s.status.toLowerCase() === 'ended'
     case 'continuing':
       return s.status.toLowerCase() === 'continuing'
+    case 'missing':
+      return hasMissing(s)
     default:
       return true
   }
@@ -66,6 +77,9 @@ export default function SeriesLibraryList({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [searching, setSearching] = useState(false)
+  const [searchSummary, setSearchSummary] = useState<{ ok: boolean; text: string } | null>(null)
 
   const filtered = useMemo(
     () =>
@@ -81,6 +95,42 @@ export default function SeriesLibraryList({
     [filtered, page_, pageSize],
   )
 
+  function toggleSelected(id: number) {
+    setSelected((sel) => {
+      const next = new Set(sel)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setSearchSummary(null)
+  }
+
+  function toggleSelectAll() {
+    setSearchSummary(null)
+    setSelected((sel) => (sel.size === filtered.length ? new Set() : new Set(filtered.map((s) => s.id))))
+  }
+
+  async function searchSelected() {
+    setSearching(true)
+    setSearchSummary(null)
+    try {
+      const res = await api.post<{ results: { series_id: number; status: string }[]; ok: number }>(
+        `/services/${serviceId}/series/search/bulk`,
+        { series_ids: [...selected] },
+      )
+      const failed = res.results.length - res.ok
+      setSearchSummary({
+        ok: failed === 0,
+        text: `Search started for ${res.ok} series${failed ? `, ${failed} failed` : ''}.`,
+      })
+      setSelected(new Set())
+    } catch (err) {
+      setSearchSummary({ ok: false, text: err instanceof ApiError ? err.message : 'Failed' })
+    } finally {
+      setSearching(false)
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between mb-3">
@@ -91,6 +141,7 @@ export default function SeriesLibraryList({
             onChange={(e) => {
               setQuery(e.target.value)
               setPage(1)
+              setSelected(new Set())
             }}
             className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500 w-full sm:w-64"
           />
@@ -99,6 +150,7 @@ export default function SeriesLibraryList({
             onChange={(e) => {
               setStatusFilter(e.target.value as StatusFilter)
               setPage(1)
+              setSelected(new Set())
             }}
             className="rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm text-slate-100"
           >
@@ -119,6 +171,40 @@ export default function SeriesLibraryList({
         </div>
       </div>
 
+      {statusFilter === 'missing' && filtered.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              className="accent-violet-500"
+              checked={selected.size > 0 && selected.size === filtered.length}
+              onChange={toggleSelectAll}
+            />
+            Select all {filtered.length}
+          </label>
+          {selected.size > 0 && (
+            <>
+              <span className="text-sm text-slate-100 font-medium">{selected.size} selected</span>
+              <button
+                onClick={searchSelected}
+                disabled={searching}
+                className="rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5"
+              >
+                {searching ? 'Searching…' : `Search all missing (${selected.size})`}
+              </button>
+              <button onClick={() => setSelected(new Set())} className="btn-secondary">
+                Deselect
+              </button>
+            </>
+          )}
+          {searchSummary && (
+            <span className={clsx('text-sm', searchSummary.ok ? 'text-teal-300' : 'text-red-300')}>
+              {searchSummary.text}
+            </span>
+          )}
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <p className="text-slate-500 text-sm py-6 text-center">
           {series.length === 0 ? 'No series found.' : 'No series match your filter.'}
@@ -131,6 +217,15 @@ export default function SeriesLibraryList({
               to={`/services/${serviceId}/series/${s.id}`}
               className="flex items-center gap-4 bg-slate-950 border border-slate-800 rounded-xl p-3 hover:border-violet-600/40 transition-colors"
             >
+              {statusFilter === 'missing' && (
+                <input
+                  type="checkbox"
+                  className="accent-violet-500 shrink-0"
+                  checked={selected.has(s.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleSelected(s.id)}
+                />
+              )}
               <div className="w-12 h-[72px] shrink-0 bg-slate-900 rounded-md overflow-hidden flex items-center justify-center">
                 {s.poster_url ? (
                   <img src={s.poster_url} alt="" className="w-full h-full object-cover" />

@@ -97,7 +97,10 @@ confirm.
 ![Series library](images/series-library.png)
 
 - **Series** — your library, filterable by monitored / unmonitored /
-  continuing / ended. Open a series for its seasons (newest first, Specials
+  continuing / ended / missing episodes. Filtering to missing episodes adds
+  a checkbox to each series and a **Search all missing** button, so you can
+  select several and search all of them in one go instead of one at a time.
+  Open a series for its seasons (newest first, Specials
   last): monitor a whole series or season, search a season, see its
   history, and open a season for its episodes — each with its own monitor
   toggle, a search button when it's missing (it spins while Sonarr searches,

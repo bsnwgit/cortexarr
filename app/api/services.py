@@ -469,6 +469,32 @@ async def trigger_season_search(
     return {"ok": True}
 
 
+class BulkSeriesSearchIn(BaseModel):
+    series_ids: list[int] = Field(min_length=1, max_length=200)
+
+
+@router.post("/{service_id}/series/search/bulk")
+async def bulk_series_search(
+    service_id: int, body: BulkSeriesSearchIn, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The series library's "search all missing" bulk action (scope: mass
+    filtering at series level) — one SeriesSearch command per selected
+    series, each covering every missing monitored episode in it."""
+    row, client = await _get_service_and_client(service_id, db)
+    api_key = decrypt_str(row["api_key_enc"])
+    fn = _client_fn(row, client, "search_series")
+    results = []
+    for sid in body.series_ids:
+        try:
+            await fn(row["base_url"], api_key, sid)
+            results.append({"series_id": sid, "status": "ok"})
+        except (ConnectivityError, ServiceApiError) as exc:
+            results.append({"series_id": sid, "status": "failed", "detail": str(exc)})
+    await audit.record(db, user=admin, action="series.search_bulk", target_type="service_instance",
+                       target_id=service_id, detail={"series_ids": body.series_ids})
+    return {"results": results, "ok": sum(r["status"] == "ok" for r in results)}
+
+
 @router.post("/{service_id}/episodes/{episode_id}/search")
 async def trigger_episode_search(
     service_id: int, episode_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),

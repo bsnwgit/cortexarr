@@ -21,7 +21,10 @@ leaving the page.
   failed (pulled from Seerr's log), with **Retry**.
 - **Sonarr** — your series library, each series with its seasons and
   episodes (monitor, search, delete), the download queue, missing episodes
-  grouped by series, and a month-grid calendar. Deleting a series offers
+  grouped by series, and a month-grid calendar. The library filters by
+  monitored state, continuing/ended, or missing episodes — filter to
+  missing, select the ones you want, and search all of them at once.
+  Deleting a series offers
   removing its matching Seerr request too, so Seerr doesn't keep thinking
   it's wanted and quietly try to fill it again. Can also accept its own
   webhook (Settings → Services → Webhook) so a health change reaches
@@ -74,9 +77,6 @@ leaving the page.
 
 Planned but not built yet — kept here so none of it gets lost:
 
-- **Mass filtering at series level** — filter the series library by state
-  (e.g. series with missing episodes) and select the matching series to act
-  on together.
 - **Force sync with reality** — compare what Seerr says (requested,
   processing, available) with what's really in Sonarr/Radarr, the download
   client, and on disk; show every mismatch, and bring them back in line in
