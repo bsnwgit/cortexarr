@@ -176,6 +176,9 @@ Everything persistent — `config.yaml`, the database, logs — lives in the
 `docker compose pull && docker compose up -d`, not self-update's in-place
 apply (self-update inside Docker only ever notifies — see the Admin Guide).
 
+To remove: `docker compose down` (keeps the `cortexarr-data` volume, so
+your config and database survive; add `-v` to delete that too).
+
 ## Getting started
 
 1. Open Cortexarr in a browser and sign in as `admin` with the password the
@@ -192,6 +195,48 @@ apply (self-update inside Docker only ever notifies — see the Admin Guide).
 The [User Guide](docs/USER_GUIDE.md) walks through each page; the
 [Admin Guide](docs/ADMIN_GUIDE.md) covers adding services, maintenance
 mode, notifications, and users.
+
+## Locked out?
+
+An admin can reset anyone else's password from **Settings → Users**, but
+if you're the only admin and you're locked out yourself, there's no
+self-service reset yet — go straight to the database. This updates the
+password in place; nothing else needs to stop or restart.
+
+Native install:
+
+```
+cd /opt/cortexarr   # or wherever you installed it
+venv/bin/python3 -c "
+import bcrypt, sqlite3, getpass
+new_password = getpass.getpass('New password for admin: ')
+h = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+conn = sqlite3.connect('cortexarr.db')
+conn.execute('UPDATE users SET hashed_password = ? WHERE username = ?', (h, 'admin'))
+conn.commit()
+conn.close()
+print('Password updated.')
+"
+```
+
+Docker:
+
+```
+docker exec -it cortexarr python3 -c "
+import bcrypt, sqlite3, getpass
+new_password = getpass.getpass('New password for admin: ')
+h = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+conn = sqlite3.connect('/data/cortexarr.db')
+conn.execute('UPDATE users SET hashed_password = ? WHERE username = ?', (h, 'admin'))
+conn.commit()
+conn.close()
+print('Password updated.')
+"
+```
+
+The password is typed interactively — it's never in your shell history or
+visible on screen. If the locked-out account isn't literally named
+`admin`, change the username in the `WHERE` clause first.
 
 ## Configuration
 
