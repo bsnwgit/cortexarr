@@ -1,6 +1,4 @@
-<img src="docs/logo.svg" alt="" width="64" height="64" align="left" />
-
-# Cortexarr
+![Cortexarr](docs/images/social-preview.png)
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![GitHub Discussions](https://img.shields.io/github/discussions/bsnwgit/cortexarr)](https://github.com/bsnwgit/cortexarr/discussions)
