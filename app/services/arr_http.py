@@ -232,6 +232,7 @@ _HISTORY_WINDOWS = (7, 30)
 # The big reads (a whole library, a thousand history rows) can take longer
 # than the 15s every other call gets on a large install.
 _STATS_TIMEOUT = 45.0
+_UNMAPPED_NAMES = 100
 
 
 def _count_history(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
@@ -253,6 +254,28 @@ def _count_history(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
             if now - when <= timedelta(days=d):
                 out[str(d)][bucket] += 1
     return out
+
+
+def _folder_total(path: str, free: int | None, mounts: list[dict[str, Any]]) -> int | None:
+    """A root folder reports only its free space, so its total is borrowed
+    from the disk it lives on: the longest listed mount that contains it.
+    The container's own root filesystem ("/") is never borrowed from — a
+    media folder that isn't a listed mount of its own is almost always a
+    separate disk that /diskspace doesn't list, and "/" would give it the
+    wrong size. A total smaller than the free space is impossible, so that
+    is dropped too. No total shows as free space alone, never a wrong one."""
+    best = None
+    for m in mounts:
+        mp = (m.get("path") or "").rstrip("/")
+        if not mp:
+            continue
+        if path == mp or path.startswith(mp + "/"):
+            if best is None or len(mp) > len((best.get("path") or "").rstrip("/")):
+                best = m
+    total = best.get("totalSpace") if best else None
+    if total is None or (free is not None and free > total):
+        return None
+    return total
 
 
 async def _section(coro: Any, timings: dict[str, float] | None = None, key: str = "") -> tuple[Any, str | None]:
@@ -294,14 +317,17 @@ async def get_common_stats(app: str, base_url: str, api_key: str) -> dict[str, A
     folders = []
     for r in roots if isinstance(roots, list) else []:
         path = r.get("path") or ""
-        # A root folder reports only its free space; the total comes from the
-        # mount it lives on (the longest disk path that is a prefix of it).
-        mount = max((m for m in mounts if path.startswith(m["path"].rstrip("/") + "/") or path == m["path"]),
-                    key=lambda m: len(m["path"]), default=None)
+        free = r.get("freeSpace")
+        # Folders on disk that the app isn't tracking — the "Unmapped Folders"
+        # column of its own Root Folders table. Names are capped; the count isn't.
+        unmapped = r.get("unmappedFolders") or []
         folders.append({
             "path": path, "accessible": bool(r.get("accessible", True)),
-            "free_bytes": r.get("freeSpace"),
-            "total_bytes": mount.get("totalSpace") if mount else None,
+            "free_bytes": free,
+            "total_bytes": _folder_total(path, free, mounts),
+            "unmapped_count": len(unmapped),
+            "unmapped": [u.get("name") or u.get("relativePath") or u.get("path") or ""
+                         for u in unmapped[:_UNMAPPED_NAMES] if isinstance(u, dict)],
         })
     return {
         "version": system.get("version") or "",

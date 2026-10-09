@@ -131,7 +131,9 @@ read (say, history on a slow Sonarr) is named while the rest still shows.
 - **Sonarr / Radarr** — version, how many items are in the queue (and
   whether it has errors or warnings), library size (series or movies,
   monitored, files on disk, space used), **media library space** (free space
-  on each root folder, with its total where the mount is known),
+  on each root folder, with its total where the mount is known, and the
+  folders the app reports as unmapped — the same count as its own Root
+  Folders table, with their names),
   grabbed/imported/failed counts for the last 7 and 30 days, and each disk's
   free space. Neither app has a usage-statistics page like NZBGet's, so
   these are the numbers they do report. The grab/import/failed counts come
