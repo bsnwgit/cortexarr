@@ -23,7 +23,10 @@ interface ArrStats {
   history: Record<string, { grabbed: number; imported: number; failed: number }>
   history_sampled: number
   // Where the media lives: each root folder's free space (total from its mount).
-  library_folders?: { path: string; accessible: boolean; free_bytes: number | null; total_bytes: number | null }[]
+  library_folders?: {
+    path: string; accessible: boolean; free_bytes: number | null; total_bytes: number | null
+    unmapped_count?: number; unmapped?: string[]
+  }[]
   library: {
     noun: string; items: number; monitored: number
     file_noun: string; files: number; files_total: number; size_bytes: number
@@ -317,7 +320,14 @@ function ArrBlock({ s }: { s: ArrStats }) {
         <div className="space-y-2">
           <div className="text-xs text-slate-400">Media library space</div>
           {(s.library_folders ?? []).map((f) => (
-            <SpaceRow key={f.path} name={f.path} free={f.free_bytes} total={f.total_bytes} note={f.accessible ? '' : 'not accessible'} />
+            <SpaceRow
+              key={f.path}
+              name={f.path}
+              free={f.free_bytes}
+              total={f.total_bytes}
+              note={f.accessible ? '' : 'not accessible'}
+              extra={<Unmapped count={f.unmapped_count ?? 0} names={f.unmapped ?? []} />}
+            />
           ))}
         </div>
       )}
@@ -334,7 +344,11 @@ function ArrBlock({ s }: { s: ArrStats }) {
   )
 }
 
-function SpaceRow({ name, free, total, note }: { name: string; free: number | null; total: number | null; note?: string }) {
+function SpaceRow({ name, free, total: totalIn, note, extra }: { name: string; free: number | null; total: number | null; note?: string; extra?: React.ReactNode }) {
+  let total = totalIn
+  // Free space larger than the total can't be real, so draw no bar and show
+  // no total rather than a wrong one.
+  if (total != null && free != null && free > total) total = null
   const used = total && free != null ? Math.round(100 * (1 - free / total)) : null
   return (
     <div className="text-sm">
@@ -352,7 +366,28 @@ function SpaceRow({ name, free, total, note }: { name: string; free: number | nu
           />
         </div>
       )}
+      {extra}
     </div>
+  )
+}
+
+// "Unmapped Folders" as the app's own Root Folders table shows it: folders
+// sitting in the root folder that the app isn't tracking. The count is the
+// app's; the names are listed when there are any.
+function Unmapped({ count, names }: { count: number; names: string[] }) {
+  if (count === 0) return <p className="text-xs text-slate-400 mt-1">No unmapped folders</p>
+  return (
+    <details className="mt-1 text-xs">
+      <summary className="cursor-pointer text-amber-300">
+        {count} unmapped folder{count === 1 ? '' : 's'}
+      </summary>
+      <ul className="mt-1 ml-4 list-disc text-slate-300 space-y-0.5">
+        {names.map((n, i) => (
+          <li key={i} className="break-all">{n}</li>
+        ))}
+        {count > names.length && <li className="text-slate-400 list-none -ml-4">…and {count - names.length} more</li>}
+      </ul>
+    </details>
   )
 }
 
