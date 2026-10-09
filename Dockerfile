@@ -3,10 +3,11 @@
 # mounts frontend/dist itself — no separate nginx/frontend container).
 #
 # Code (app/, migrations/, frontend/dist/, VERSION, requirements.txt) lives
-# in the image and is replaced by pulling a new tag, not by self-update's
-# in-place file swap — see app/self_update.py, which refuses to auto-apply
-# when CORTEXARR_DOCKER=1 (set below) for exactly this reason. Persistent
-# state (config.yaml, the database, logs) lives under /data, the one
+# in the image, which self-update can't change. With CORTEXARR_DOCKER=1 (set
+# below) it writes a newer release to /data/release instead, and
+# docker-entrypoint.sh runs that in preference to the image's code. A
+# rebuilt image with newer code wins again. Persistent state (config.yaml,
+# the database, logs, and any applied release) lives under /data, the one
 # volume this image expects.
 
 FROM node:20-slim AS frontend

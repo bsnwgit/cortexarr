@@ -26,6 +26,32 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo "  and API are ever served from different origins."
 fi
 
+# Self-update inside Docker writes a release to /data/release (the image's
+# own files can't be changed). Run it instead of the image's code when it is
+# newer and actually starts; after a rebuild with newer code the image wins
+# again. Delete /data/release to go back to the image's code.
+RELEASE_DIR=/data/release
+if [ -f "$RELEASE_DIR/VERSION" ] && [ -f "$RELEASE_DIR/app/main.py" ]; then
+    NEWER=$(python3 - <<'PYEOF'
+def key(path):
+    try:
+        return tuple(int(x) for x in open(path).read().strip().split(".")[:3])
+    except (OSError, ValueError):
+        return (0, 0, 0)
+
+print("yes" if key("/data/release/VERSION") > key("/app/VERSION") else "no")
+PYEOF
+)
+    if [ "$NEWER" = "yes" ]; then
+        if (cd "$RELEASE_DIR" && python3 -c "import app.main" >/dev/null 2>&1); then
+            cd "$RELEASE_DIR"
+            echo "Running release $(cat VERSION) from $RELEASE_DIR"
+        else
+            echo "Release in $RELEASE_DIR doesn't start — running the image's code instead."
+        fi
+    fi
+fi
+
 DB_EXISTED=0
 [ -f /data/cortexarr.db ] && DB_EXISTED=1
 

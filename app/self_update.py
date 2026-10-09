@@ -4,8 +4,13 @@ local VERSION and, in 'auto' mode inside the configured window, downloads
 and applies a newer release, then exits so systemd (Restart=always — see
 cortexarr.service) brings the new code back up.
 
-'manual' mode (the default) only ever reads — it records what's available
-so Settings → General can show it, and never touches a file on disk.
+'manual' mode (the default) never applies anything by itself — it records
+what's available so Settings → General can show it, and an admin's "Update
+now" applies it on demand.
+
+In Docker the code is in the image, so a release is written to `release/` in
+the data volume and docker-entrypoint.sh runs it when it is newer than the
+image's; the container's restart policy brings it back up.
 
 There is no code signing upstream: this trusts GitHub's TLS and nothing
 else, same as any other HTTPS download. Applying is refused outright on an
@@ -101,9 +106,6 @@ async def status(db: aiosqlite.Connection) -> dict:
         "update_available": await _get_setting(db, "self_update_available", False),
         "checked_at": await _get_setting(db, "self_update_checked_at"),
         "last_error": await _get_setting(db, "self_update_last_error", ""),
-        # Docker can't self-apply (see _refuses_auto_apply); the UI says so
-        # up front instead of offering a button that would refuse.
-        "docker": bool(os.environ.get("CORTEXARR_DOCKER")),
         "last_applied_tag": await _get_setting(db, "self_update_applied_tag"),
         "last_applied_at": await _get_setting(db, "self_update_applied_at"),
     }
@@ -158,16 +160,32 @@ def _is_git_checkout(install_dir: Path) -> bool:
     return (install_dir / ".git").exists()
 
 
+def _in_docker() -> bool:
+    return bool(os.environ.get("CORTEXARR_DOCKER"))
+
+
+def _release_dir(install_dir: Path) -> Path:
+    """Where an applied release lands. On a normal install that is the
+    install directory itself. In Docker the code lives in the image, which
+    a file swap can't change, so a release goes into `release/` in the data
+    volume instead; docker-entrypoint.sh runs it in preference to the
+    image's own code whenever it is newer (and the image wins again after a
+    rebuild with newer code)."""
+    return install_dir / "release" if _in_docker() else install_dir
+
+
+def _requirements(path: Path) -> list[str]:
+    try:
+        lines = (line.strip() for line in path.read_text().splitlines())
+        return sorted(line for line in lines if line and not line.startswith("#"))
+    except OSError:
+        return []
+
+
 def _refuses_auto_apply(install_dir: Path) -> str:
     """Reasons an install can never safely self-mutate — checked before
     every apply, not just once at startup, since the setting can change
     without a restart."""
-    if os.environ.get("CORTEXARR_DOCKER"):
-        return (
-            "running in the Docker image — app/, migrations/ and the built frontend "
-            "live in the read-only image layer, not a writable install directory a "
-            "file swap could persist. Pull a new image tag instead."
-        )
     if _is_git_checkout(install_dir):
         return f"{install_dir} looks like a git checkout — refusing to overwrite it"
     return ""
@@ -190,6 +208,7 @@ async def apply_update(db: aiosqlite.Connection) -> dict:
     refusal = _refuses_auto_apply(install_dir)
     if refusal:
         raise RuntimeError(f"Refusing to auto-apply: {refusal}")
+    target = _release_dir(install_dir)
 
     assets = await _get_setting(db, "self_update_latest_assets", [])
     tag = await _get_setting(db, "self_update_latest_tag", "")
@@ -219,11 +238,22 @@ async def apply_update(db: aiosqlite.Connection) -> dict:
         staged = _find_staged_root(extract_dir)
         _verify_staged(staged)
 
+        if _in_docker():
+            # The image's Python packages can't change under a running
+            # container, so a release that needs different ones needs a rebuild.
+            here = Path(__file__).resolve().parent.parent / "requirements.txt"
+            if _requirements(staged / "requirements.txt") != _requirements(here):
+                raise UpdateRefused(
+                    "This release needs different Python packages, which an update can't install "
+                    "inside the container. Rebuild the image instead: git pull && docker compose up -d --build"
+                )
+        target.mkdir(parents=True, exist_ok=True)
+
         for name in _UPDATED_PATHS:
             src = staged / name
             if not src.exists():
                 continue
-            dest = install_dir / name
+            dest = target / name
             if dest.exists():
                 if dest.is_dir():
                     shutil.rmtree(dest)
@@ -236,7 +266,7 @@ async def apply_update(db: aiosqlite.Connection) -> dict:
 
         frontend_dist_src = staged / "frontend" / "dist"
         if frontend_dist_src.exists():
-            frontend_dist_dest = install_dir / "frontend" / "dist"
+            frontend_dist_dest = target / "frontend" / "dist"
             if frontend_dist_dest.exists():
                 shutil.rmtree(frontend_dist_dest)
             frontend_dist_dest.parent.mkdir(parents=True, exist_ok=True)

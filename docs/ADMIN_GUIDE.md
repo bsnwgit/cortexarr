@@ -254,10 +254,10 @@ moved to a fresh install.
   nothing newer. That downloads the newest release, applies it
   exactly as Auto does (below) — at once, not waiting for the window — and
   restarts Cortexarr; the page reloads itself when the new version is up. It
-  re-checks GitHub first, and it refuses on the same installs Auto does (a
-  git checkout, the Docker image), saying why. It relies on the systemd
-  unit's `Restart=always` to bring the new version back up; without a
-  service manager the process exits and has to be started again by hand.
+  re-checks GitHub first, and it refuses on a git checkout, saying why. It relies on
+  the service manager (the systemd unit's `Restart=always`, or Docker's restart
+  policy) to bring the new version back up; without one the process exits
+  and has to be started again by hand.
 - **Auto** downloads the newer release's packaged asset and applies it
   itself, inside the daily window set below the mode dropdown — never
   outside it, so an update never lands mid-use. Applying means: replacing
@@ -274,12 +274,17 @@ moved to a fresh install.
   it would silently discard whatever hasn't been committed. Development
   and staging checkouts should stay on manual and update via `git pull`
   instead.
-- Auto mode also refuses inside the Docker image — there, `app/` lives in
-  the read-only image layer, not somewhere a file swap could durably land.
-  Update a container by pulling a new image tag instead (see the README's
-  Docker section); self-update inside Docker only ever notifies. There the
-  Update now button stays greyed out and the page shows the command to run
-  on the Docker host instead.
+- **Docker.** The image's own files can't be changed, so inside Docker an
+  update is written to `release/` in the data volume (`/data/release`) and
+  the container restarts itself — `restart: unless-stopped` in the supplied
+  `docker-compose.yml` is what brings it back, so keep a restart policy. At
+  every start the container runs `/data/release` only when it is newer than
+  the code in the image and actually starts; otherwise it runs the image's
+  code, so rebuilding the image with newer code (`git pull && docker compose
+  up -d --build`) takes over again. Delete `release/` in the volume to go
+  back to the image's code at any time. A release that needs different
+  Python packages is refused with a message, because packages can't be
+  installed into a running container — rebuild the image for that one.
 
 ## MCP server and API tokens
 
