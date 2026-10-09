@@ -69,8 +69,10 @@ Alerts for why).
 The dropdown at the top right filters the list — **In progress** (the default),
 **All**, each stage, *Not released yet*, *Failed in Seerr* — each with its
 count; the filter is kept in the page address, so a view can be bookmarked.
-When a filter mixes stages, *Not released yet* always sorts to the bottom —
-it isn't a problem, so it never sits above one.
+A title that isn't released yet is not in progress — nothing is moving until it
+comes out — so **In progress** leaves it out and its count doesn't include it.
+Under **All** it sits at the bottom, under its own *Not released yet* heading,
+and its card carries a *Not released yet* label instead of the stage bar.
 
 Click a request to go straight to it where it's at in the pipeline:
 waiting for approval opens Seerr's pending requests; downloading or

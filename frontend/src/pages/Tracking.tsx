@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
@@ -39,7 +39,7 @@ interface TrackingResponse {
 // Off the main line: the request hasn't failed, it just isn't moving through
 // the stages (not released yet), or it has (failed), or we can't see it.
 const SIDE_STAGES: Record<string, { label: string; className: string }> = {
-  upcoming: { label: 'Not released yet', className: 'text-slate-300' },
+  upcoming: { label: 'Not released yet', className: 'text-sky-300' },
   failed: { label: 'Failed in Seerr', className: 'text-red-300' },
   unknown: { label: "Can't tell", className: 'text-amber-300' },
 }
@@ -84,8 +84,10 @@ function destination(r: Tracked): { href: string; label: string } {
 }
 
 // The filter buttons: "in progress" (the default) and "all", each main-line
-// stage, then the side states. Counts come from the full list.
-const DONE = new Set(['available', 'failed'])
+// stage, then the side states. Counts come from the full list. A request that
+// isn't released yet isn't in progress — nothing is moving, there's nothing to
+// do until it comes out — so it stays out of "in progress" with the finished ones.
+const DONE = new Set(['available', 'failed', 'upcoming'])
 const SIDE_ORDER = ['upcoming', 'failed', 'unknown']
 
 // A Seerr request followed through the pipeline — one row per request, a
@@ -205,17 +207,27 @@ export default function Tracking() {
         <PageSpinner />
       ) : shown.length === 0 ? (
         <p className="text-slate-400 text-sm">
-          {filter === 'active' ? 'Nothing in progress — every request is available.' : 'No requests here.'}
+          {filter === 'active'
+            ? count('upcoming') > 0
+              ? `Nothing in progress — ${count('upcoming')} waiting on a release.`
+              : 'Nothing in progress — every request is available.'
+            : 'No requests here.'}
         </p>
       ) : (
         <div className="space-y-2">
-          {shown.map((r) => {
+          {shown.map((r, n) => {
             const idx = stages.findIndex((s) => s.key === r.stage)
             const side = SIDE_STAGES[r.stage]
             const dest = destination(r)
             return (
+              <Fragment key={`${r.seerr.service_id}-${r.request_id}`}>
+              {/* In "All", the unreleased ones sit under their own heading. */}
+              {filter === 'all' && r.stage === 'upcoming' && n === shown.findIndex((x) => x.stage === 'upcoming') && (
+                <h3 className="pt-3 text-sm font-medium text-sky-300">
+                  Not released yet ({count('upcoming')})
+                </h3>
+              )}
               <div
-                key={`${r.seerr.service_id}-${r.request_id}`}
                 role="link"
                 tabIndex={0}
                 title={`Open in ${dest.label}`}
@@ -263,7 +275,12 @@ export default function Tracking() {
                     <span className="text-violet-300"> · Open in {dest.label} →</span>
                   </div>
 
-                  {side ? (
+                  {r.stage === 'upcoming' ? (
+                    <p className="mt-2 text-sm text-slate-300">
+                      <span className="metadata-pill text-xs text-sky-300 mr-2">{side.label}</span>
+                      {r.detail}
+                    </p>
+                  ) : side ? (
                     <p className={clsx('mt-2 text-sm', side.className)}>
                       {side.label}
                       {r.detail ? ` — ${r.detail}` : ''}
@@ -348,6 +365,7 @@ export default function Tracking() {
                   )}
                 </div>
               </div>
+              </Fragment>
             )
           })}
         </div>
