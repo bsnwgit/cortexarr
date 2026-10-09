@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -17,13 +18,19 @@ interface ArrStats {
   version: string
   started_at: string | null
   disks: { path: string; label: string; free_bytes: number; total_bytes: number }[]
-  queue: { total: number; errors: boolean; warnings: boolean }
+  queue: { total: number; errors: boolean; warnings: boolean } | null
   history: Record<string, { grabbed: number; imported: number; failed: number }>
   history_sampled: number
+  // Where the media lives: each root folder's free space (total from its mount).
+  library_folders?: { path: string; accessible: boolean; free_bytes: number | null; total_bytes: number | null }[]
   library: {
     noun: string; items: number; monitored: number
     file_noun: string; files: number; files_total: number; size_bytes: number
-  }
+  } | null
+  // Sections that couldn't be read, with why — the rest still shows.
+  notes: string[]
+  // Seconds each call took — shows which one is slow.
+  timings?: Record<string, number>
 }
 
 interface VolumeStats {
@@ -68,7 +75,9 @@ interface ServiceStats {
   type: string
   ok: boolean
   error?: string
+  took_ms?: number
   stats?: ArrStats | DownloadStats | RequestStats
+  loading?: boolean
 }
 
 // Chart strokes per service type (hex because Recharts takes colors as props,
@@ -83,33 +92,71 @@ const TOOLTIP_STYLE = {
   background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, fontSize: 12, color: '#e2e8f0',
 }
 
-// Sonarr/Radarr first (the *arr apps), then the download clients, then Seerr.
-const ORDER: Record<string, number> = { sonarr: 0, radarr: 1, nzbget: 2, sabnzbd: 3, seerr: 4 }
+// Seerr first, then the download clients, then Sonarr and Radarr.
+const ORDER: Record<string, number> = { seerr: 0, nzbget: 1, sabnzbd: 2, sonarr: 3, radarr: 4 }
 
-// The Status page — each service's own numbers, live from the service (not
-// stored), one section per service. See app/api/stats.py.
+interface ServiceRef { id: number; name: string; type: string }
+
+// The Status page — one tab per service, each showing that service's own
+// numbers live (not stored). Only the open tab is read, so a slow service
+// never holds up the others. See app/api/stats.py.
 export default function Status() {
-  const [services, setServices] = useState<ServiceStats[] | null>(null)
+  const [services, setServices] = useState<ServiceRef[] | null>(null)
+  const [results, setResults] = useState<Record<number, ServiceStats>>({})
   const [error, setError] = useState('')
+  const [params, setParams] = useSearchParams()
   const { tick, refreshing, refresh, done } = useRefresh()
 
   useEffect(() => {
     let cancelled = false
     api
-      .get<{ services: ServiceStats[] }>('/stats/')
-      .then((r) => {
+      .get<(ServiceRef & { enabled: boolean })[]>('/services/')
+      .then((list) => {
         if (cancelled) return
-        setServices([...r.services].sort((a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || a.name.localeCompare(b.name)))
-        setError('')
+        setServices(
+          list
+            .filter((s) => s.enabled)
+            .sort((a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || a.name.localeCompare(b.name)),
+        )
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Could not load status'))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const activeId = Number(params.get('service')) || services?.[0]?.id
+
+  // Refresh forgets what was read, so every tab reads fresh when opened.
+  useEffect(() => {
+    if (tick > 0) setResults({})
+  }, [tick])
+
+  useEffect(() => {
+    const svc = services?.find((s) => s.id === activeId)
+    if (!svc || results[svc.id]) {
+      done()
+      return
+    }
+    let cancelled = false
+    api
+      .get<ServiceStats>(`/stats/${svc.id}${tick > 0 ? '?fresh=true' : ''}`)
+      .catch((e): ServiceStats => ({
+        service_id: svc.id, name: svc.name, type: svc.type, ok: false,
+        error: e instanceof Error ? e.message : 'Could not load',
+      }))
+      .then((res) => {
+        if (!cancelled) setResults((cur) => ({ ...cur, [svc.id]: res }))
+      })
       .finally(() => {
         if (!cancelled) done()
       })
     return () => {
       cancelled = true
     }
-  }, [tick, done])
+  }, [services, activeId, results, tick, done])
+
+  const active = services?.find((s) => s.id === activeId)
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -124,7 +171,29 @@ export default function Status() {
       ) : services && services.length === 0 ? (
         <p className="text-sm text-slate-400">No services yet — add one under Settings → Services.</p>
       ) : (
-        services?.map((s) => <ServiceSection key={s.service_id} svc={s} />)
+        <>
+          <div className="flex flex-wrap gap-1">
+            {services?.map((s) => {
+              const accent = getServiceAccent(s.type)
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setParams({ service: String(s.id) }, { replace: true })}
+                  className={clsx(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border transition-colors',
+                    s.id === activeId
+                      ? clsx(accent.bg, accent.text, accent.border)
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border-transparent',
+                  )}
+                >
+                  <ServiceIcon type={s.type} className="w-4 h-4" />
+                  {s.name}
+                </button>
+              )
+            })}
+          </div>
+          {active && <ServiceSection svc={results[active.id] ?? { service_id: active.id, name: active.name, type: active.type, ok: false, loading: true }} />}
+        </>
       )}
     </div>
   )
@@ -140,7 +209,9 @@ function ServiceSection({ svc }: { svc: ServiceStats }) {
         <span className="text-xs text-slate-400 capitalize">{svc.type}</span>
       </div>
       <div className="p-4 space-y-4">
-        {!svc.ok || !svc.stats ? (
+        {svc.loading ? (
+          <PageSpinner className="py-6" />
+        ) : !svc.ok || !svc.stats ? (
           <p className="text-sm text-red-300">{svc.error || 'No statistics available'}</p>
         ) : svc.stats.kind === 'arr' ? (
           <ArrBlock s={svc.stats} />
@@ -183,18 +254,30 @@ function ArrBlock({ s }: { s: ArrStats }) {
       <div className="flex flex-wrap gap-3">
         <Tile label="Version" value={s.version || '—'} />
         {s.started_at && <Tile label="Running since" value={<span className="text-sm">{fmtWhen(s.started_at)}</span>} />}
-        <Tile label="In queue" value={s.queue.total} />
-        {s.queue.errors && <Tile label="Queue" value="Errors" tone="bad" />}
-        {s.queue.warnings && <Tile label="Queue" value="Warnings" tone="warn" />}
+        {s.queue && <Tile label="In queue" value={s.queue.total} />}
+        {s.queue?.errors && <Tile label="Queue" value="Errors" tone="bad" />}
+        {s.queue?.warnings && <Tile label="Queue" value="Warnings" tone="warn" />}
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Tile label={`${lib.noun} in library`} value={lib.items} />
-        <Tile label="Monitored" value={lib.monitored} />
-        <Tile label={`${lib.file_noun} on disk`} value={`${lib.files} / ${lib.files_total}`} />
-        <Tile label="Size on disk" value={fmtBytes(lib.size_bytes)} />
-      </div>
+      {s.timings && (
+        <p className="text-xs text-slate-400">
+          Read in: {Object.entries(s.timings).map(([k, v]) => `${k} ${v}s`).join(' · ')}
+        </p>
+      )}
+      {(s.notes ?? []).map((n) => (
+        <p key={n} className="text-xs text-amber-300">Couldn't read — {n}</p>
+      ))}
 
+      {lib && (
+        <div className="flex flex-wrap gap-3">
+          <Tile label={`${lib.noun} in library`} value={lib.items} />
+          <Tile label="Monitored" value={lib.monitored} />
+          <Tile label={`${lib.file_noun} on disk`} value={`${lib.files} / ${lib.files_total}`} />
+          <Tile label="Size on disk" value={fmtBytes(lib.size_bytes)} />
+        </div>
+      )}
+
+      {Object.keys(s.history ?? {}).length > 0 && (
       <div>
         <div className="text-xs text-slate-400 mb-1">Activity (from the last {s.history_sampled} history records)</div>
         <table className="text-sm text-slate-200">
@@ -218,32 +301,48 @@ function ArrBlock({ s }: { s: ArrStats }) {
           </tbody>
         </table>
       </div>
+      )}
+
+      {(s.library_folders ?? []).length > 0 && (
+        <div className="space-y-2">
+          <div className="text-xs text-slate-400">Media library space</div>
+          {(s.library_folders ?? []).map((f) => (
+            <SpaceRow key={f.path} name={f.path} free={f.free_bytes} total={f.total_bytes} note={f.accessible ? '' : 'not accessible'} />
+          ))}
+        </div>
+      )}
 
       {s.disks.length > 0 && (
         <div className="space-y-2">
           <div className="text-xs text-slate-400">Disk space</div>
-          {s.disks.map((d) => {
-            const used = d.total_bytes ? Math.round(100 * (1 - d.free_bytes / d.total_bytes)) : 0
-            return (
-              <div key={d.path} className="text-sm">
-                <div className="flex justify-between text-slate-200">
-                  <span className="truncate">{d.label || d.path}</span>
-                  <span className="text-slate-400">
-                    {fmtBytes(d.free_bytes)} free of {fmtBytes(d.total_bytes)}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-slate-800 rounded-full mt-1">
-                  <div
-                    className={clsx('h-1.5 rounded-full', used >= 95 ? 'bg-red-400' : used >= 85 ? 'bg-amber-400' : 'bg-teal-400')}
-                    style={{ width: `${used}%` }}
-                  />
-                </div>
-              </div>
-            )
-          })}
+          {s.disks.map((d) => (
+            <SpaceRow key={d.path} name={d.label || d.path} free={d.free_bytes} total={d.total_bytes} />
+          ))}
         </div>
       )}
     </>
+  )
+}
+
+function SpaceRow({ name, free, total, note }: { name: string; free: number | null; total: number | null; note?: string }) {
+  const used = total && free != null ? Math.round(100 * (1 - free / total)) : null
+  return (
+    <div className="text-sm">
+      <div className="flex justify-between gap-3 text-slate-200">
+        <span className="truncate">{name}{note ? ` (${note})` : ''}</span>
+        <span className="text-slate-400 whitespace-nowrap">
+          {free == null ? 'free space unknown' : total ? `${fmtBytes(free)} free of ${fmtBytes(total)}` : `${fmtBytes(free)} free`}
+        </span>
+      </div>
+      {used != null && (
+        <div className="h-1.5 bg-slate-800 rounded-full mt-1">
+          <div
+            className={clsx('h-1.5 rounded-full', used >= 95 ? 'bg-red-400' : used >= 85 ? 'bg-amber-400' : 'bg-teal-400')}
+            style={{ width: `${used}%` }}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
