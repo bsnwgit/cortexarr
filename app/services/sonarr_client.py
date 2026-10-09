@@ -25,6 +25,7 @@ app/api/services.py's `_DETAIL_CLIENTS`.
 """
 from __future__ import annotations
 
+import asyncio
 from functools import partial
 from typing import Any
 
@@ -42,6 +43,7 @@ __all__ = [
     "search_episode", "search_season", "search_series",
     "delete_episode_file", "delete_series",
     "remove_queue_item", "import_queue_item", "get_series_progress", "get_command",
+    "get_stats",
 ]
 
 
@@ -533,3 +535,24 @@ async def get_series_history(base_url: str, api_key: str, series_id: int, page_s
         }
         for r in records
     ]
+
+
+async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
+    """The Status page's numbers: system/disk/queue/history plus library totals."""
+    common, data = await asyncio.gather(
+        arr_http.get_common_stats(_APP, base_url, api_key),
+        _get(base_url, api_key, "/api/v3/series"),
+    )
+    series = data if isinstance(data, list) else []
+    stats = [r.get("statistics") or {} for r in series]
+    return {
+        "kind": "arr", **common,
+        "library": {
+            "noun": "series", "items": len(series),
+            "monitored": sum(1 for r in series if r.get("monitored")),
+            "file_noun": "episodes",
+            "files": sum(st.get("episodeFileCount", 0) for st in stats),
+            "files_total": sum(st.get("episodeCount", 0) for st in stats),
+            "size_bytes": sum(st.get("sizeOnDisk", 0) for st in stats),
+        },
+    }

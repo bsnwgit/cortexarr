@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -32,7 +32,7 @@ __all__ = [
     "test_connection", "check_health",
     "get_overview", "get_queue", "get_history",
     "pause_item", "resume_item", "move_item_top", "delete_item", "retry_item",
-    "pause_all", "resume_all",
+    "pause_all", "resume_all", "get_stats",
 ]
 
 _APP = "SABnzbd"
@@ -307,3 +307,43 @@ async def pause_all(base_url: str, api_key: str) -> None:
 
 async def resume_all(base_url: str, api_key: str) -> None:
     _ok(await _api(base_url, api_key, "resume"), "resume")
+
+
+def _sab_server(name: str, v: dict[str, Any], today: str) -> dict[str, Any]:
+    """One server's block of `mode=server_stats`: byte totals plus per-date
+    dicts for bytes and articles. No per-second speed history, so the
+    Status page draws only the daily chart for SABnzbd."""
+    daily = v.get("daily") or {}
+    tried = v.get("articles_tried") or {}
+    ok = v.get("articles_success") or {}
+    since = lambda n: (datetime.fromisoformat(today) - timedelta(days=n - 1)).date().isoformat()  # noqa: E731
+    window = lambda n: int(sum(b for d, b in daily.items() if d >= since(n)))  # noqa: E731
+    success = int(sum(ok.values()))
+    failed = max(int(sum(tried.values())) - success, 0)
+    return {
+        "id": name, "name": name, "host": name, "connections": None, "active": None,
+        "total_bytes": int(v.get("total") or 0),
+        "today_bytes": int(v.get("day") or 0), "week_bytes": int(v.get("week") or 0),
+        "month_bytes": int(v.get("month") or 0), "year_bytes": window(365),
+        "articles_success": success, "articles_failed": failed,
+        "completion_pct": round(100 * success / (success + failed), 1) if success + failed else None,
+        "seconds": [], "minutes": [], "hours": [],
+        "days": [{"date": d, "bytes": int(b)} for d, b in sorted(daily.items()) if d >= since(30)],
+    }
+
+
+async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
+    data = await _api(base_url, api_key, "server_stats")
+    today = datetime.now(timezone.utc).date().isoformat()
+    servers = [_sab_server(n, v, today) for n, v in (data.get("servers") or {}).items()]
+    totals = {
+        "total_bytes": int(data.get("total") or 0), "today_bytes": int(data.get("day") or 0),
+        "week_bytes": int(data.get("week") or 0), "month_bytes": int(data.get("month") or 0),
+        "year_bytes": sum(s["year_bytes"] for s in servers),
+        "articles_success": sum(s["articles_success"] for s in servers),
+        "articles_failed": sum(s["articles_failed"] for s in servers),
+        "seconds": [], "minutes": [], "hours": [], "days": [],
+    }
+    n = totals["articles_success"] + totals["articles_failed"]
+    totals["completion_pct"] = round(100 * totals["articles_success"] / n, 1) if n else None
+    return {"kind": "download", "client": "sabnzbd", "uptime_seconds": None, "totals": totals, "servers": servers}

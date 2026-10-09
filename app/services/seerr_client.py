@@ -36,7 +36,7 @@ __all__ = [
     "ConnectivityError", "ServiceApiError", "HealthResult",
     "test_connection", "check_health",
     "get_requests", "get_issues", "get_history",
-    "approve_request", "decline_request", "retry_request", "delete_request",
+    "approve_request", "decline_request", "retry_request", "delete_request", "get_stats",
 ]
 
 _APP = "Seerr"
@@ -423,3 +423,11 @@ async def delete_request(base_url: str, api_key: str, request_id: int) -> None:
     more" — a title that was deleted, or a request stuck stalled with
     nothing left to fix."""
     await _delete(base_url, api_key, f"{_API}/request/{request_id}")
+
+
+async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
+    """Request counts by state, from Seerr's own /request/count."""
+    c = await _get(base_url, api_key, f"{_API}/request/count")
+    c = c if isinstance(c, dict) else {}
+    keys = ("total", "movie", "tv", "pending", "approved", "declined", "processing", "available", "completed")
+    return {"kind": "requests", "counts": {k: c.get(k) or 0 for k in keys}}

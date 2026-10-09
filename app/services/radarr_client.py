@@ -20,6 +20,7 @@ Field names follow Radarr's published OpenAPI spec
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from functools import partial
 from typing import Any
@@ -35,6 +36,7 @@ __all__ = [
     "get_movie_detail", "get_movie_history",
     "set_movie_monitored", "search_movie", "delete_movie_file", "delete_movie",
     "remove_queue_item", "import_queue_item", "get_movies_progress",
+    "get_stats",
 ]
 
 _APP = "Radarr"
@@ -352,3 +354,23 @@ async def get_movies_progress(base_url: str, api_key: str) -> list[dict[str, Any
          "has_file": bool(m.get("hasFile")), "is_available": bool(m.get("isAvailable"))}
         for m in (data if isinstance(data, list) else [])
     ]
+
+
+async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
+    """The Status page's numbers: system/disk/queue/history plus library totals."""
+    common, data = await asyncio.gather(
+        arr_http.get_common_stats(_APP, base_url, api_key),
+        _get(base_url, api_key, "/api/v3/movie"),
+    )
+    movies = data if isinstance(data, list) else []
+    return {
+        "kind": "arr", **common,
+        "library": {
+            "noun": "movies", "items": len(movies),
+            "monitored": sum(1 for m in movies if m.get("monitored")),
+            "file_noun": "movies",
+            "files": sum(1 for m in movies if m.get("hasFile")),
+            "files_total": len(movies),
+            "size_bytes": sum(m.get("sizeOnDisk") or 0 for m in movies),
+        },
+    }

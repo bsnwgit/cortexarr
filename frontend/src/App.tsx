@@ -15,6 +15,7 @@ import Users from './pages/Users'
 import ApiTokens from './pages/ApiTokens'
 import Tracking from './pages/Tracking'
 import History from './pages/History'
+import Status from './pages/Status'
 import Notifications from './pages/Notifications'
 import MyNotifications from './pages/MyNotifications'
 
@@ -53,6 +54,7 @@ function AppRoutes() {
         </Route>
         <Route path="tracking" element={<Tracking />} />
         <Route path="history" element={<History />} />
+        <Route path="status" element={<Status />} />
         {/* Alerts, the activity feed, and the audit log — one top-nav
             destination named "Notifications", after Tracking. Keeps the
             original /alerts path so it doesn't collide with the personal

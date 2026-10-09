@@ -277,6 +277,27 @@ def _verify_staged(staged: Path) -> None:
         raise RuntimeError(f"Release package is missing expected files: {missing}")
 
 
+class UpdateRefused(Exception):
+    """An update that can't or shouldn't be applied right now — already up
+    to date, GitHub unreachable, or an install that must not self-mutate
+    (a git checkout, the Docker image). Not a failure: nothing was touched."""
+
+
+async def apply_now(db: aiosqlite.Connection) -> dict:
+    """The admin's "Update now" click: the same download-and-swap auto mode
+    does, but on demand and outside the daily window — the person pressing
+    the button is the window. Re-checks GitHub first so a stale "available"
+    flag can't apply an old release. The caller is responsible for exiting
+    afterwards so systemd brings the new code up (see maybe_apply)."""
+    found = await check_latest(db)
+    if not found["update_available"]:
+        raise UpdateRefused(found["last_error"] or "Already up to date")
+    refusal = _refuses_auto_apply(Path(get_settings().install_dir))
+    if refusal:
+        raise UpdateRefused(refusal[0].upper() + refusal[1:])
+    return await apply_update(db)
+
+
 async def maybe_apply(db: aiosqlite.Connection) -> None:
     mode = await _get_setting(db, "self_update_mode", "manual")
     if mode != "auto":
