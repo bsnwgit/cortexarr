@@ -183,9 +183,12 @@ only, and won't be shown again. `Ctrl+C` once you've got it, then open
 `http://<this-host>:8770` and sign in.
 
 Everything persistent — `config.yaml`, the database, logs — lives in the
-`cortexarr-data` volume; the image itself holds only code, so upgrading is
-`docker compose pull && docker compose up -d`, not self-update's in-place
-apply (self-update inside Docker only ever notifies — see the Admin Guide).
+`cortexarr-data` volume; the image itself holds only code. Settings →
+General's **Update now** works in Docker too: it stores the new release in
+that volume and restarts the container (see the Admin Guide). To move the
+image itself, run `docker compose up -d --build` after pulling the new
+source, or `docker compose pull && docker compose up -d` for a published
+image.
 
 To remove: `docker compose down` (keeps the `cortexarr-data` volume, so
 your config and database survive; add `-v` to delete that too).

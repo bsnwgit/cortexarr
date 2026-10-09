@@ -33,7 +33,6 @@ interface UpdateStatus {
   latest_tag: string | null
   latest_url: string | null
   update_available: boolean
-  docker?: boolean
   checked_at: string | null
   last_error: string
   last_applied_tag: string | null
@@ -193,7 +192,7 @@ function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
 
   if (!update) return null
 
-  const canApply = isAdmin && update.update_available && !update.docker
+  const canApply = isAdmin && update.update_available
   const button = 'px-3 py-1.5 rounded-lg text-sm border transition-colors'
   const buttonOn = 'border-teal-600/40 bg-teal-600/20 text-teal-300 hover:bg-teal-600/30'
   const buttonOff = 'border-slate-800 text-slate-400 cursor-not-allowed'
@@ -229,18 +228,11 @@ function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
           <button
             onClick={() => setConfirming(true)}
             disabled={!canApply || restarting || confirming}
-            title={update.docker ? 'Docker installs update with docker compose' : update.update_available ? '' : 'Already up to date'}
+            title={update.update_available ? '' : 'Already up to date'}
             className={clsx(button, canApply && !restarting && !confirming ? buttonOn : buttonOff)}
           >
             Update now
           </button>
-        </div>
-      )}
-
-      {isAdmin && update.docker && (
-        <div className="text-xs text-slate-300 space-y-1">
-          <p>This is a Docker install, so it updates from the project folder on the Docker host:</p>
-          <pre className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 overflow-x-auto">git pull && docker compose up -d --build</pre>
         </div>
       )}
 
