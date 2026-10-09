@@ -58,7 +58,7 @@ leaving the page.
   most active rules and services, and requests completed with average time
   to available. A 7/30/90-day range on each. Request trends fill in going
   forward from when this shipped — nothing before that is backfilled.
-- **Status** — a top-nav tab after History, one tab per service, read live
+- **Statistics** — a top-nav tab after History, one tab per service, read live
   (nothing stored): Sonarr and Radarr report version, queue counts, library
   size, media library and disk space, and grabbed/imported/failed counts; NZBGet and SABnzbd
   report per news server data (today, 7/30/365 days, total), article
