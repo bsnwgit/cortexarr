@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts'
 import { api } from '../api/client'
+import OpenServiceLink from '../components/OpenServiceLink'
 import PageSpinner from '../components/PageSpinner'
 import RefreshButton, { useRefresh } from '../components/RefreshButton'
 import ServiceIcon from '../components/ServiceIcon'
@@ -95,9 +96,9 @@ const TOOLTIP_STYLE = {
 // Seerr first, then the download clients, then Sonarr and Radarr.
 const ORDER: Record<string, number> = { seerr: 0, nzbget: 1, sabnzbd: 2, sonarr: 3, radarr: 4 }
 
-interface ServiceRef { id: number; name: string; type: string }
+interface ServiceRef { id: number; name: string; type: string; base_url?: string }
 
-// The Status page — one tab per service, each showing that service's own
+// The Statistics page — one tab per service, each showing that service's own
 // numbers live (not stored). Only the open tab is read, so a slow service
 // never holds up the others. See app/api/stats.py.
 export default function Status() {
@@ -119,7 +120,7 @@ export default function Status() {
             .sort((a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || a.name.localeCompare(b.name)),
         )
       })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Could not load status'))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Could not load statistics'))
     return () => {
       cancelled = true
     }
@@ -161,8 +162,11 @@ export default function Status() {
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-100">Status</h1>
-        <RefreshButton onRefresh={refresh} refreshing={refreshing} label="Refresh status" />
+        <h1 className="text-lg font-semibold text-slate-100">Statistics</h1>
+        <div className="flex items-center gap-1">
+          <RefreshButton onRefresh={refresh} refreshing={refreshing} label="Refresh statistics" />
+          {active && <OpenServiceLink url={active.base_url} name={active.name} />}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-300">{error}</p>}

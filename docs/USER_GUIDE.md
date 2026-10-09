@@ -117,13 +117,14 @@ instead of live: pick a 7/30/90-day range at the top right.
   shipped was recorded, since nothing tracked *when* a request finished
   until now.
 
-## Status
+## Statistics
 
-**Status** (top nav, after History) is each service's own numbers, read
+**Statistics** (top nav, after History) is each service's own numbers, read
 live — one tab per service, in the order Seerr, download clients, then
 Sonarr and Radarr. Only the open tab is read, so a slow service never holds
-up the others. The refresh icon at the top right reads the open tab again;
-without it, a tab you reopen within a minute shows the numbers it just read.
+up the others. The refresh icon at the top right reads the open tab again
+(without it, a tab you reopen within a minute shows the numbers it just
+read), and the icon beside it opens that service's own web page.
 A service that can't be reached shows its error, and a part that can't be
 read (say, history on a slow Sonarr) is named while the rest still shows.
 
