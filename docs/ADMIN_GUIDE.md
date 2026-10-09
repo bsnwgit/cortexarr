@@ -242,9 +242,15 @@ moved to a fresh install.
 `github.com/bsnwgit/cortexarr`'s releases once an hour for a newer one —
 **Check now** asks immediately instead of waiting.
 
-- **Manual** (the default) only ever notifies: a banner links to the
-  release notes, and nothing on disk changes until someone updates by
-  hand.
+- **Manual** (the default) never updates on its own: a banner links to the
+  release notes, and nothing on disk changes until an admin clicks
+  **Update now** under it. That downloads the newest release, applies it
+  exactly as Auto does (below) — at once, not waiting for the window — and
+  restarts Cortexarr; the page reloads itself when the new version is up. It
+  re-checks GitHub first, and it refuses on the same installs Auto does (a
+  git checkout, the Docker image), saying why. It relies on the systemd
+  unit's `Restart=always` to bring the new version back up; without a
+  service manager the process exits and has to be started again by hand.
 - **Auto** downloads the newer release's packaged asset and applies it
   itself, inside the daily window set below the mode dropdown — never
   outside it, so an update never lands mid-use. Applying means: replacing

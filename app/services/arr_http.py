@@ -15,7 +15,9 @@ Error contract (unchanged from when this lived in sonarr_client.py):
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -216,3 +218,64 @@ def cover_url(images: list[dict[str, Any]] | None, cover_type: str) -> str:
         if img.get("coverType") == cover_type and img.get("remoteUrl"):
             return img["remoteUrl"]
     return ""
+
+
+# ---------------------------------------------------------------------------
+# Status page — what the app says about itself, shared by Sonarr and Radarr.
+# Neither app has a usage-statistics endpoint like NZBGet's, so this is
+# system info, disk space, queue counts, and grab/import/fail counts worked
+# out from recent history. Each client adds its own library totals.
+# ---------------------------------------------------------------------------
+
+_HISTORY_WINDOWS = (7, 30)
+
+
+def _count_history(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Grabbed / imported / failed per window. Matched on a substring of the
+    event type (downloadFolderImported, downloadFailed, ...) so a variant
+    name between app versions still lands in the right bucket."""
+    now = datetime.now(timezone.utc)
+    out = {str(d): {"grabbed": 0, "imported": 0, "failed": 0} for d in _HISTORY_WINDOWS}
+    for r in records:
+        try:
+            when = datetime.fromisoformat(str(r.get("date")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        kind = str(r.get("eventType") or "").lower()
+        bucket = "grabbed" if "grabbed" in kind else "imported" if "imported" in kind else "failed" if "failed" in kind else None
+        if not bucket:
+            continue
+        for d in _HISTORY_WINDOWS:
+            if now - when <= timedelta(days=d):
+                out[str(d)][bucket] += 1
+    return out
+
+
+async def get_common_stats(app: str, base_url: str, api_key: str) -> dict[str, Any]:
+    system, disks, queue, history = await asyncio.gather(
+        get(app, base_url, api_key, "/api/v3/system/status"),
+        get(app, base_url, api_key, "/api/v3/diskspace"),
+        get(app, base_url, api_key, "/api/v3/queue/status"),
+        get(app, base_url, api_key, "/api/v3/history", params={
+            "pageSize": 1000, "sortKey": "date", "sortDirection": "descending",
+        }),
+    )
+    system = system if isinstance(system, dict) else {}
+    queue = queue if isinstance(queue, dict) else {}
+    records = history.get("records", []) if isinstance(history, dict) else []
+    return {
+        "version": system.get("version") or "",
+        "started_at": system.get("startTime"),
+        "disks": [
+            {"path": d.get("path") or "", "label": d.get("label") or "",
+             "free_bytes": d.get("freeSpace") or 0, "total_bytes": d.get("totalSpace") or 0}
+            for d in (disks if isinstance(disks, list) else [])
+        ],
+        "queue": {
+            "total": queue.get("totalCount") or 0,
+            "errors": bool(queue.get("errors")),
+            "warnings": bool(queue.get("warnings")),
+        },
+        "history": _count_history(records),
+        "history_sampled": len(records),
+    }

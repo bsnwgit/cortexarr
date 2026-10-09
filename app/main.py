@@ -24,7 +24,7 @@ from app.config import get_settings
 from app.database import init_db, seed_admin
 
 from app.api import auth, users, services, settings as settings_router, status as status_router, audit as audit_router
-from app.api import alerts, tokens, tracking, config_export, server_tls, webhooks, history as history_router
+from app.api import alerts, tokens, tracking, config_export, server_tls, webhooks, history as history_router, stats as stats_router
 from app.mcp import server as mcp_server
 from app.self_update import current_version
 
@@ -110,6 +110,7 @@ app.include_router(mcp_server.router, tags=["mcp"])
 # Public, unauthenticated — see app/api/status.py's module docstring.
 app.include_router(status_router.router, prefix="/api/status", tags=["status"])
 app.include_router(history_router.router, prefix="/api/history", tags=["history"])
+app.include_router(stats_router.router, prefix="/api/stats", tags=["stats"])
 
 
 @app.get("/api/health", tags=["system"])

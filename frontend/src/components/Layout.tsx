@@ -14,6 +14,7 @@ const TABS = [
   { to: '/tracking', label: 'Tracking' },
   { to: '/alerts', label: 'Notifications' },
   { to: '/history', label: 'History' },
+  { to: '/status', label: 'Status' },
 ]
 
 export default function Layout() {

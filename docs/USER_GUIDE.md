@@ -117,6 +117,29 @@ instead of live: pick a 7/30/90-day range at the top right.
   shipped was recorded, since nothing tracked *when* a request finished
   until now.
 
+## Status
+
+**Status** (top nav, after History) is each service's own numbers, read
+live when you open the page — nothing is stored, and the refresh icon at
+the top right reloads it. One section per service; a service that can't be
+reached shows its error instead of hiding the rest.
+
+- **Sonarr / Radarr** — version, how many items are in the queue (and
+  whether it has errors or warnings), library size (series or movies,
+  monitored, files on disk, space used), grabbed/imported/failed counts for
+  the last 7 and 30 days, and each disk's free space. Neither app has a
+  usage-statistics page like NZBGet's, so these are the numbers they do
+  report. The grab/import/failed counts come from the app's most recent 1000
+  history records, so a very busy app's 30-day count can be an undercount.
+- **NZBGet / SABnzbd** — for all servers together and for each news server:
+  data downloaded today, in the last 7, 30 and 365 days, and in total;
+  articles succeeded and failed with the completion %; and a chart switching
+  between **Speed** and **Data** over 60 seconds, 60 minutes, 24 hours or 30
+  days. NZBGet also shows each server's connections and whether it is
+  active. SABnzbd only keeps daily totals, so it only has the 30-day chart.
+- **Seerr** — requests by state: total, movies, TV, pending, approved,
+  processing, available, declined.
+
 ## Service pages
 
 The refresh icon at the right of a service page's header reloads that page

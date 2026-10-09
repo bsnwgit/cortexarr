@@ -16,6 +16,7 @@ NZBGet differs from the *arrs and Seerr in two ways that shape this module:
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,7 +30,7 @@ __all__ = [
     "test_connection", "check_health",
     "get_overview", "get_queue", "get_history",
     "pause_item", "resume_item", "move_item_top", "delete_item", "retry_item",
-    "pause_all", "resume_all",
+    "pause_all", "resume_all", "get_stats",
 ]
 
 _APP = "NZBGet"
@@ -311,3 +312,71 @@ async def pause_all(base_url: str, api_key: str) -> None:
 
 async def resume_all(base_url: str, api_key: str) -> None:
     await _call(base_url, api_key, "resumedownload")
+
+
+def _ring(slots: Any, current: Any) -> list[int]:
+    """A volume ring buffer (NZBGet writes into slot `current`) as bytes,
+    oldest first, newest last."""
+    slots = slots or []
+    n = len(slots)
+    if not n:
+        return []
+    start = (int(current or 0) + 1) % n
+    return [_u64(slots[(start + i) % n], "Size") for i in range(n)]
+
+
+def _server_stats(v: dict[str, Any], today: int) -> dict[str, Any]:
+    days = [_u64(d, "Size") for d in v.get("BytesPerDays") or []]
+    first = int(v.get("FirstDay") or 0)
+
+    def last(n: int) -> int:
+        # Slot i is day `first + i`; a window is the days after today - n.
+        return sum(b for i, b in enumerate(days) if today - n < first + i <= today)
+
+    articles = v.get("ArticlesPerDays") or []
+    success = sum(a.get("Success") or 0 for a in articles)
+    failed = sum(a.get("Failed") or 0 for a in articles)
+    return {
+        "total_bytes": _u64(v, "TotalSize"),
+        "today_bytes": last(1), "week_bytes": last(7), "month_bytes": last(30), "year_bytes": last(365),
+        "articles_success": success, "articles_failed": failed,
+        "completion_pct": round(100 * success / (success + failed), 1) if success + failed else None,
+        "seconds": _ring(v.get("BytesPerSeconds"), v.get("SecSlot")),
+        "minutes": _ring(v.get("BytesPerMinutes"), v.get("MinSlot")),
+        "hours": _ring(v.get("BytesPerHours"), v.get("HourSlot")),
+        # Last 30 days, oldest first, with the date each slot is.
+        "days": [{"date": datetime.fromtimestamp((first + i) * 86400, tz=timezone.utc).date().isoformat(), "bytes": b}
+                 for i, b in enumerate(days) if today - 30 < first + i <= today],
+    }
+
+
+async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
+    """The Status page: per news server, what NZBGet's own Statistics page
+    shows — data over time, article success/failure, connections."""
+    volumes, config, status = await asyncio.gather(
+        _call(base_url, api_key, "servervolumes"),
+        _call(base_url, api_key, "config"),
+        _call(base_url, api_key, "status"),
+    )
+    cfg = {c.get("Name"): c.get("Value") for c in config or []}
+    today = int(time.time() // 86400)
+    servers, totals = [], None
+    for v in volumes or []:
+        sid = int(v.get("ServerID") or 0)
+        stats = _server_stats(v, today)
+        if sid == 0:  # record 0 is the all-servers total
+            totals = stats
+            continue
+        servers.append({
+            "id": sid,
+            "name": cfg.get(f"Server{sid}.Name") or f"Server {sid}",
+            "host": cfg.get(f"Server{sid}.Host") or "",
+            "connections": int(cfg.get(f"Server{sid}.Connections") or 0),
+            "active": str(cfg.get(f"Server{sid}.Active") or "").lower() == "yes",
+            **stats,
+        })
+    return {
+        "kind": "download", "client": "nzbget",
+        "uptime_seconds": int(status.get("UpTimeSec") or 0),
+        "totals": totals, "servers": servers,
+    }

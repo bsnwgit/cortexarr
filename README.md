@@ -58,6 +58,11 @@ leaving the page.
   most active rules and services, and requests completed with average time
   to available. A 7/30/90-day range on each. Request trends fill in going
   forward from when this shipped — nothing before that is backfilled.
+- **Status** — a top-nav tab after History, read live from each service
+  (nothing stored): Sonarr and Radarr report version, queue counts, library
+  size, disk space, and grabbed/imported/failed counts; NZBGet and SABnzbd
+  report per news server data (today, 7/30/365 days, total), article
+  success and failure, and speed/data charts; Seerr reports request counts.
 - **Notifications** — a top-nav tab, next to Tracking, with four views:
   Alerts and Rules (below), an activity feed across every service
   (filterable by pipeline), and an audit log of every change made in
@@ -87,9 +92,9 @@ leaving the page.
   file, rather than writing secrets out in plain text. Re-importing skips
   anything already there by name, so it's safe to run the same file twice.
 - **Self-update** — checks GitHub releases against the running version;
-  manual mode (the default) just shows what's available, auto mode
-  downloads and applies it inside a maintenance window you set, then
-  restarts itself.
+  manual mode (the default) shows what's available, with an **Update now**
+  button for admins; auto mode downloads and applies it inside a
+  maintenance window you set. Either way it then restarts itself.
 
 ## Requested features
 

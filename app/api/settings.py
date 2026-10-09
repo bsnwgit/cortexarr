@@ -8,8 +8,10 @@ All settings are stored as JSON values in the SQLite settings table.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 import aiosqlite
@@ -195,6 +197,26 @@ async def force_update_check(admin: AdminUser, db: aiosqlite.Connection = Depend
     await audit.record(db, user=admin, action="self_update.check", target_type="system",
                         detail={"available": result.get("update_available")})
     return result
+
+
+@router.post("/update-apply")
+async def apply_update_now(admin: AdminUser, db: aiosqlite.Connection = Depends(get_db)):
+    """Admin-triggered "Update now": download the newest release and swap it
+    in (app/self_update.py's apply, the same one auto mode runs), then exit
+    shortly after answering so the service manager (Restart=always in
+    cortexarr.service) starts the new code. The delay is what lets this
+    response reach the browser before the process goes away."""
+    from app import self_update
+    try:
+        result = await self_update.apply_now(db)
+    except self_update.UpdateRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        log.exception("Update now failed")
+        raise HTTPException(status_code=502, detail=f"Update failed: {exc}")
+    await audit.record(db, user=admin, action="self_update.apply", target_type="system", detail=result)
+    asyncio.get_running_loop().call_later(2, os._exit, 0)
+    return {**result, "restarting": True}
 
 
 class TestNotificationRequest(BaseModel):

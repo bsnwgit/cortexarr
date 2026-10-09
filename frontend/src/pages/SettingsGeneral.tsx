@@ -128,6 +128,8 @@ function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const [restarting, setRestarting] = useState(false)
 
   async function load() {
     try {
@@ -153,6 +155,40 @@ function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
+  // The server downloads the release, swaps it in, then exits so systemd
+  // starts the new code. Poll until the version changes, then reload so the
+  // browser picks up the new frontend.
+  async function updateNow() {
+    if (!update) return
+    setError('')
+    setConfirming(false)
+    try {
+      await api.post('/settings/update-apply', {})
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Update failed')
+      return
+    }
+    setRestarting(true)
+    const before = update.current_version
+    const started = Date.now()
+    const timer = window.setInterval(async () => {
+      try {
+        const now = await api.get<UpdateStatus>('/settings/update-status')
+        if (now.current_version !== before) {
+          window.clearInterval(timer)
+          window.location.reload()
+        }
+      } catch {
+        // Expected while the service restarts.
+      }
+      if (Date.now() - started > 120_000) {
+        window.clearInterval(timer)
+        setRestarting(false)
+        setError('Still waiting for Cortexarr to come back — reload this page in a moment.')
+      }
+    }, 2000)
+  }
+
   if (!update) return null
 
   return (
@@ -168,14 +204,43 @@ function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
         )}
       </div>
       {update.update_available ? (
-        <p className="text-xs text-teal-300">
-          {update.latest_tag} is available.{' '}
-          {update.latest_url && (
-            <a href={update.latest_url} target="_blank" rel="noreferrer" className="underline hover:text-teal-200">
-              Release notes
-            </a>
+        <div className="space-y-2">
+          <p className="text-xs text-teal-300">
+            {update.latest_tag} is available.{' '}
+            {update.latest_url && (
+              <a href={update.latest_url} target="_blank" rel="noreferrer" className="underline hover:text-teal-200">
+                Release notes
+              </a>
+            )}
+          </p>
+          {isAdmin && restarting && <p className="text-xs text-slate-300">Updating — Cortexarr is restarting, this page will reload on its own…</p>}
+          {isAdmin && !restarting && !confirming && (
+            <button
+              onClick={() => setConfirming(true)}
+              className="px-3 py-1.5 rounded-lg text-sm border border-teal-600/40 bg-teal-600/20 text-teal-300 hover:bg-teal-600/30"
+            >
+              Update now
+            </button>
           )}
-        </p>
+          {isAdmin && !restarting && confirming && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-300">
+                Download {update.latest_tag} and restart Cortexarr? It will be unavailable for a few seconds.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={updateNow}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-teal-600/40 bg-teal-600/20 text-teal-300 hover:bg-teal-600/30"
+                >
+                  Update and restart
+                </button>
+                <button onClick={() => setConfirming(false)} className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-slate-200">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         <p className="text-xs text-slate-400">Up to date{update.checked_at ? ` — last checked ${new Date(update.checked_at).toLocaleString()}` : ''}.</p>
       )}
