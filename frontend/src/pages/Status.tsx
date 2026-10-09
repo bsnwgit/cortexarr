@@ -249,6 +249,12 @@ function pct(n: number | null) {
 
 function ArrBlock({ s }: { s: ArrStats }) {
   const lib = s.library
+  // A disk that is one of the media library folders already shows under
+  // "Media library space" — same path, or the same mount (same total and free).
+  const folders = s.library_folders ?? []
+  const otherDisks = s.disks.filter(
+    (d) => !folders.some((f) => f.path === d.path || (f.total_bytes === d.total_bytes && f.free_bytes === d.free_bytes)),
+  )
   return (
     <>
       <div className="flex flex-wrap gap-3">
@@ -312,10 +318,10 @@ function ArrBlock({ s }: { s: ArrStats }) {
         </div>
       )}
 
-      {s.disks.length > 0 && (
+      {otherDisks.length > 0 && (
         <div className="space-y-2">
           <div className="text-xs text-slate-400">Disk space</div>
-          {s.disks.map((d) => (
+          {otherDisks.map((d) => (
             <SpaceRow key={d.path} name={d.label || d.path} free={d.free_bytes} total={d.total_bytes} />
           ))}
         </div>
