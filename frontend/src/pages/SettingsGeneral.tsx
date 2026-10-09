@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { allTimeZones, setTimeZone } from '../utils/time'
@@ -32,6 +33,7 @@ interface UpdateStatus {
   latest_tag: string | null
   latest_url: string | null
   update_available: boolean
+  docker?: boolean
   checked_at: string | null
   last_error: string
   last_applied_tag: string | null
@@ -191,61 +193,76 @@ function UpdateCheck({ isAdmin }: { isAdmin: boolean }) {
 
   if (!update) return null
 
+  const canApply = isAdmin && update.update_available && !update.docker
+  const button = 'px-3 py-1.5 rounded-lg text-sm border transition-colors'
+  const buttonOn = 'border-teal-600/40 bg-teal-600/20 text-teal-300 hover:bg-teal-600/30'
+  const buttonOff = 'border-slate-800 text-slate-400 cursor-not-allowed'
+
   return (
-    <div className="bg-slate-925 border border-slate-800 rounded-xl p-4 space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm text-slate-100">
-          Cortexarr <span className="text-slate-400">v{update.current_version}</span>
-        </div>
-        {isAdmin && (
-          <button onClick={checkNow} disabled={checking} className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-50 underline">
-            {checking ? 'Checking…' : 'Check now'}
-          </button>
-        )}
+    <div className="bg-slate-925 border border-slate-800 rounded-xl p-4 space-y-3">
+      <div className="text-sm text-slate-100">
+        Cortexarr <span className="text-slate-400">v{update.current_version}</span>
       </div>
+
       {update.update_available ? (
-        <div className="space-y-2">
-          <p className="text-xs text-teal-300">
-            {update.latest_tag} is available.{' '}
-            {update.latest_url && (
-              <a href={update.latest_url} target="_blank" rel="noreferrer" className="underline hover:text-teal-200">
-                Release notes
-              </a>
-            )}
-          </p>
-          {isAdmin && restarting && <p className="text-xs text-slate-300">Updating — Cortexarr is restarting, this page will reload on its own…</p>}
-          {isAdmin && !restarting && !confirming && (
-            <button
-              onClick={() => setConfirming(true)}
-              className="px-3 py-1.5 rounded-lg text-sm border border-teal-600/40 bg-teal-600/20 text-teal-300 hover:bg-teal-600/30"
-            >
-              Update now
-            </button>
+        <p className="text-xs text-teal-300">
+          {update.latest_tag} is available.{' '}
+          {update.latest_url && (
+            <a href={update.latest_url} target="_blank" rel="noreferrer" className="underline hover:text-teal-200">
+              Release notes
+            </a>
           )}
-          {isAdmin && !restarting && confirming && (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-300">
-                Download {update.latest_tag} and restart Cortexarr? It will be unavailable for a few seconds.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={updateNow}
-                  className="px-3 py-1.5 rounded-lg text-sm border border-teal-600/40 bg-teal-600/20 text-teal-300 hover:bg-teal-600/30"
-                >
-                  Update and restart
-                </button>
-                <button onClick={() => setConfirming(false)} className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-slate-200">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        </p>
       ) : (
         <p className="text-xs text-slate-400">Up to date{update.checked_at ? ` — last checked ${new Date(update.checked_at).toLocaleString()}` : ''}.</p>
       )}
+
+      {isAdmin && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={checkNow}
+            disabled={checking || restarting}
+            className={clsx(button, 'border-slate-700 text-slate-200 hover:bg-slate-900 disabled:opacity-50')}
+          >
+            {checking ? 'Checking…' : 'Check now'}
+          </button>
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={!canApply || restarting || confirming}
+            title={update.docker ? 'Docker installs update with docker compose' : update.update_available ? '' : 'Already up to date'}
+            className={clsx(button, canApply && !restarting && !confirming ? buttonOn : buttonOff)}
+          >
+            Update now
+          </button>
+        </div>
+      )}
+
+      {isAdmin && update.docker && (
+        <div className="text-xs text-slate-300 space-y-1">
+          <p>This is a Docker install, so it updates from the project folder on the Docker host:</p>
+          <pre className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-100 overflow-x-auto">git pull && docker compose up -d --build</pre>
+        </div>
+      )}
+
+      {isAdmin && restarting && <p className="text-xs text-slate-300">Updating — Cortexarr is restarting, this page will reload on its own…</p>}
+      {isAdmin && !restarting && confirming && (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-300">
+            Download {update.latest_tag} and restart Cortexarr? It will be unavailable for a few seconds.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={updateNow} className={clsx(button, buttonOn)}>
+              Update and restart
+            </button>
+            <button onClick={() => setConfirming(false)} className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-slate-200">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {update.last_applied_tag && (
-        <p className="text-xs text-slate-500">Last applied: {update.last_applied_tag} ({update.last_applied_at ? new Date(update.last_applied_at).toLocaleString() : 'unknown time'})</p>
+        <p className="text-xs text-slate-400">Last applied: {update.last_applied_tag} ({update.last_applied_at ? new Date(update.last_applied_at).toLocaleString() : 'unknown time'})</p>
       )}
       {update.last_error && <p className="text-xs text-red-300">{update.last_error}</p>}
       {error && <p className="text-xs text-red-300">{error}</p>}

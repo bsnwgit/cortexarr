@@ -101,6 +101,9 @@ async def status(db: aiosqlite.Connection) -> dict:
         "update_available": await _get_setting(db, "self_update_available", False),
         "checked_at": await _get_setting(db, "self_update_checked_at"),
         "last_error": await _get_setting(db, "self_update_last_error", ""),
+        # Docker can't self-apply (see _refuses_auto_apply); the UI says so
+        # up front instead of offering a button that would refuse.
+        "docker": bool(os.environ.get("CORTEXARR_DOCKER")),
         "last_applied_tag": await _get_setting(db, "self_update_applied_tag"),
         "last_applied_at": await _get_setting(db, "self_update_applied_at"),
     }

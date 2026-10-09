@@ -242,9 +242,16 @@ moved to a fresh install.
 `github.com/bsnwgit/cortexarr`'s releases once an hour for a newer one —
 **Check now** asks immediately instead of waiting.
 
+- **Where updates come from.** Raising `VERSION` on `main` publishes a
+  GitHub release by itself (the *Release on version bump* workflow builds
+  the package and tags it `v<Major.Minor.Patch>`; a change that only moves
+  the codename keeps the same tag and publishes nothing). Installs compare
+  that release to the version they run, so a merged version bump is what
+  makes an update appear.
 - **Manual** (the default) never updates on its own: a banner links to the
   release notes, and nothing on disk changes until an admin clicks
-  **Update now** under it. That downloads the newest release, applies it
+  **Update now**, which is always on the page and greyed out while there is
+  nothing newer. That downloads the newest release, applies it
   exactly as Auto does (below) — at once, not waiting for the window — and
   restarts Cortexarr; the page reloads itself when the new version is up. It
   re-checks GitHub first, and it refuses on the same installs Auto does (a
@@ -270,7 +277,9 @@ moved to a fresh install.
 - Auto mode also refuses inside the Docker image — there, `app/` lives in
   the read-only image layer, not somewhere a file swap could durably land.
   Update a container by pulling a new image tag instead (see the README's
-  Docker section); self-update inside Docker only ever notifies.
+  Docker section); self-update inside Docker only ever notifies. There the
+  Update now button stays greyed out and the page shows the command to run
+  on the Docker host instead.
 
 ## MCP server and API tokens
 
