@@ -358,14 +358,18 @@ async def get_movies_progress(base_url: str, api_key: str) -> list[dict[str, Any
 
 async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
     """The Status page's numbers: system/disk/queue/history plus library totals."""
-    common, data = await asyncio.gather(
+    library_timing: dict[str, float] = {}
+    common, (data, lib_err) = await asyncio.gather(
         arr_http.get_common_stats(_APP, base_url, api_key),
-        _get(base_url, api_key, "/api/v3/movie"),
+        arr_http._section(_get(base_url, api_key, "/api/v3/movie", timeout=arr_http._STATS_TIMEOUT), library_timing, "Library"),
     )
+    common["timings"].update(library_timing)
     movies = data if isinstance(data, list) else []
+    if lib_err:
+        common["notes"].append(f"Library: {lib_err}")
     return {
         "kind": "arr", **common,
-        "library": {
+        "library": None if data is None else {
             "noun": "movies", "items": len(movies),
             "monitored": sum(1 for m in movies if m.get("monitored")),
             "file_noun": "movies",

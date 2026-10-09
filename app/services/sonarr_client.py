@@ -539,15 +539,19 @@ async def get_series_history(base_url: str, api_key: str, series_id: int, page_s
 
 async def get_stats(base_url: str, api_key: str) -> dict[str, Any]:
     """The Status page's numbers: system/disk/queue/history plus library totals."""
-    common, data = await asyncio.gather(
+    library_timing: dict[str, float] = {}
+    common, (data, lib_err) = await asyncio.gather(
         arr_http.get_common_stats(_APP, base_url, api_key),
-        _get(base_url, api_key, "/api/v3/series"),
+        arr_http._section(_get(base_url, api_key, "/api/v3/series", timeout=arr_http._STATS_TIMEOUT), library_timing, "Library"),
     )
+    common["timings"].update(library_timing)
     series = data if isinstance(data, list) else []
     stats = [r.get("statistics") or {} for r in series]
+    if lib_err:
+        common["notes"].append(f"Library: {lib_err}")
     return {
         "kind": "arr", **common,
-        "library": {
+        "library": None if data is None else {
             "noun": "series", "items": len(series),
             "monitored": sum(1 for r in series if r.get("monitored")),
             "file_noun": "episodes",

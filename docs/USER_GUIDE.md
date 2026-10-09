@@ -120,17 +120,23 @@ instead of live: pick a 7/30/90-day range at the top right.
 ## Status
 
 **Status** (top nav, after History) is each service's own numbers, read
-live when you open the page — nothing is stored, and the refresh icon at
-the top right reloads it. One section per service; a service that can't be
-reached shows its error instead of hiding the rest.
+live — one tab per service, in the order Seerr, download clients, then
+Sonarr and Radarr. Only the open tab is read, so a slow service never holds
+up the others. The refresh icon at the top right reads the open tab again;
+without it, a tab you reopen within a minute shows the numbers it just read.
+A service that can't be reached shows its error, and a part that can't be
+read (say, history on a slow Sonarr) is named while the rest still shows.
 
 - **Sonarr / Radarr** — version, how many items are in the queue (and
   whether it has errors or warnings), library size (series or movies,
-  monitored, files on disk, space used), grabbed/imported/failed counts for
-  the last 7 and 30 days, and each disk's free space. Neither app has a
-  usage-statistics page like NZBGet's, so these are the numbers they do
-  report. The grab/import/failed counts come from the app's most recent 1000
-  history records, so a very busy app's 30-day count can be an undercount.
+  monitored, files on disk, space used), **media library space** (free space
+  on each root folder, with its total where the mount is known),
+  grabbed/imported/failed counts for the last 7 and 30 days, and each disk's
+  free space. Neither app has a usage-statistics page like NZBGet's, so
+  these are the numbers they do report. The grab/import/failed counts come
+  from the app's most recent 1000 history records, so a very busy app's
+  30-day count can be an undercount. A "Read in" line shows how long each
+  call took, which tells you which one is slow.
 - **NZBGet / SABnzbd** — for all servers together and for each news server:
   data downloaded today, in the last 7, 30 and 365 days, and in total;
   articles succeeded and failed with the completion %; and a chart switching

@@ -16,6 +16,7 @@ Error contract (unchanged from when this lived in sonarr_client.py):
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -228,6 +229,9 @@ def cover_url(images: list[dict[str, Any]] | None, cover_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 _HISTORY_WINDOWS = (7, 30)
+# The big reads (a whole library, a thousand history rows) can take longer
+# than the 15s every other call gets on a large install.
+_STATS_TIMEOUT = 45.0
 
 
 def _count_history(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
@@ -251,18 +255,54 @@ def _count_history(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     return out
 
 
+async def _section(coro: Any, timings: dict[str, float] | None = None, key: str = "") -> tuple[Any, str | None]:
+    """(value, None), or (None, why it failed). One slow or failing call
+    shouldn't blank the whole service — an httpx timeout carries no message,
+    hence the fallback text. Seconds taken go into `timings[key]`, so the
+    Status page can show which call is the slow one."""
+    started = time.monotonic()
+    try:
+        return await coro, None
+    except (ConnectivityError, ServiceApiError) as exc:
+        return None, str(exc) or "timed out"
+    finally:
+        if timings is not None:
+            timings[key] = round(time.monotonic() - started, 1)
+
+
 async def get_common_stats(app: str, base_url: str, api_key: str) -> dict[str, Any]:
-    system, disks, queue, history = await asyncio.gather(
-        get(app, base_url, api_key, "/api/v3/system/status"),
-        get(app, base_url, api_key, "/api/v3/diskspace"),
-        get(app, base_url, api_key, "/api/v3/queue/status"),
-        get(app, base_url, api_key, "/api/v3/history", params={
+    timings: dict[str, float] = {}
+    (system, sys_err), (disks, disk_err), (queue, queue_err), (history, hist_err), (roots, root_err) = await asyncio.gather(
+        _section(get(app, base_url, api_key, "/api/v3/system/status"), timings, "System"),
+        _section(get(app, base_url, api_key, "/api/v3/diskspace"), timings, "Disk space"),
+        _section(get(app, base_url, api_key, "/api/v3/queue/status"), timings, "Queue"),
+        _section(get(app, base_url, api_key, "/api/v3/history", timeout=_STATS_TIMEOUT, params={
             "pageSize": 1000, "sortKey": "date", "sortDirection": "descending",
-        }),
+        }), timings, "History"),
+        _section(get(app, base_url, api_key, "/api/v3/rootfolder"), timings, "Root folders"),
     )
+    if system is None and disks is None and queue is None and history is None and roots is None:
+        raise ConnectivityError(sys_err or f"{app} did not answer")
+    notes = [f"{what}: {err}" for what, err in (
+        ("System", sys_err), ("Disk space", disk_err), ("Queue", queue_err), ("History", hist_err),
+        ("Root folders", root_err),
+    ) if err]
     system = system if isinstance(system, dict) else {}
-    queue = queue if isinstance(queue, dict) else {}
+    queue = queue if isinstance(queue, dict) else None
     records = history.get("records", []) if isinstance(history, dict) else []
+    mounts = [d for d in (disks if isinstance(disks, list) else []) if d.get("path")]
+    folders = []
+    for r in roots if isinstance(roots, list) else []:
+        path = r.get("path") or ""
+        # A root folder reports only its free space; the total comes from the
+        # mount it lives on (the longest disk path that is a prefix of it).
+        mount = max((m for m in mounts if path.startswith(m["path"].rstrip("/") + "/") or path == m["path"]),
+                    key=lambda m: len(m["path"]), default=None)
+        folders.append({
+            "path": path, "accessible": bool(r.get("accessible", True)),
+            "free_bytes": r.get("freeSpace"),
+            "total_bytes": mount.get("totalSpace") if mount else None,
+        })
     return {
         "version": system.get("version") or "",
         "started_at": system.get("startTime"),
@@ -271,11 +311,14 @@ async def get_common_stats(app: str, base_url: str, api_key: str) -> dict[str, A
              "free_bytes": d.get("freeSpace") or 0, "total_bytes": d.get("totalSpace") or 0}
             for d in (disks if isinstance(disks, list) else [])
         ],
-        "queue": {
+        "queue": None if queue is None else {
             "total": queue.get("totalCount") or 0,
             "errors": bool(queue.get("errors")),
             "warnings": bool(queue.get("warnings")),
         },
-        "history": _count_history(records),
+        "history": _count_history(records) if isinstance(history, dict) else {},
         "history_sampled": len(records),
+        "library_folders": folders,
+        "notes": notes,
+        "timings": timings,
     }
