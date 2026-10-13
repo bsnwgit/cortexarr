@@ -3,7 +3,7 @@
 ## Adding a monitored service
 
 User menu → **Settings** → **Services** → **New service**. Pick a
-type (Sonarr, Radarr, Seerr, NZBGet, or SABnzbd), give it a name, base URL,
+type (Sonarr, Radarr, Seerr, NZBGet, SABnzbd, or Dispatcharr), give it a name, base URL,
 and API key, then
 **Test connection** before saving — this checks the URL and key actually
 work, and that the URL really is the type you picked. The API key is under
@@ -18,6 +18,14 @@ the download quota is reached.
 SABnzbd uses a normal API key (*Config → General* in SABnzbd). Its health
 comes from SABnzbd's own active warnings from the last day (e.g. a news
 server login failing) plus whether downloads are paused.
+
+Dispatcharr (live TV) offers a **Sign in with** choice: **Username and
+password**, or an **API key** (Cortexarr sends it as `X-API-Key`; generate
+one in Dispatcharr). Either is stored encrypted. Whatever that Dispatcharr
+account is allowed to do is the most Cortexarr can do. Its health shows
+**Warning** when an active M3U account or EPG source Dispatcharr itself marks
+as errored. A Dispatcharr service doesn't appear on the Dashboard,
+Statistics or Tracking — it has its own **Live TV** tab.
 
 Seerr has no health endpoint of its own; its status shows **Warning** when
 Seerr reports an available update or a pending restart.

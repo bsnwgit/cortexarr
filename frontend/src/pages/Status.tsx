@@ -119,7 +119,8 @@ export default function Status() {
         if (cancelled) return
         setServices(
           list
-            .filter((s) => s.enabled)
+            // Live TV has no statistics page; it has its own tab.
+            .filter((s) => s.enabled && s.type !== 'dispatcharr')
             .sort((a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || a.name.localeCompare(b.name)),
         )
       })

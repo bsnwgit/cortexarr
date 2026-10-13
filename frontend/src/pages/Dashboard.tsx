@@ -5,6 +5,8 @@ import ServiceCard, { type DashboardService } from '../components/ServiceCard'
 import PageSpinner from '../components/PageSpinner'
 
 const FULL_WIDTH_TYPES = new Set(['seerr'])
+// Live TV has its own page; the dashboard is the media pipeline.
+const NOT_IN_PIPELINE = new Set(['dispatcharr'])
 
 // One card per monitored service — Sonarr's shows fan art from whatever
 // it's currently downloading plus state pills (active/queue/missing), not
@@ -22,7 +24,7 @@ export default function Dashboard() {
       api.get<{ id: number; base_url: string }[]>('/services/').catch(() => []),
     ])
     const urls = new Map(list.map((s) => [s.id, s.base_url]))
-    setServices(data.services.map((s) => ({ ...s, base_url: urls.get(s.id) })))
+    setServices(data.services.filter((s) => !NOT_IN_PIPELINE.has(s.type)).map((s) => ({ ...s, base_url: urls.get(s.id) })))
     setLoading(false)
   }
 

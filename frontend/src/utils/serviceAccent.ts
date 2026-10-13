@@ -62,6 +62,14 @@ const ACCENTS: Record<string, ServiceAccent> = {
     hoverBorder: 'hover:border-orange-500/40',
     band: 'from-orange-500/25 via-orange-500/10 to-transparent',
   },
+  // Dispatcharr (live TV) — sky, a hue none of the media pipeline's services use.
+  dispatcharr: {
+    text: 'text-sky-300',
+    bg: 'bg-sky-500/15',
+    border: 'border-sky-500/40',
+    hoverBorder: 'hover:border-sky-500/40',
+    band: 'from-sky-500/25 via-sky-500/10 to-transparent',
+  },
 }
 
 export function getServiceAccent(type: string): ServiceAccent {

@@ -25,6 +25,8 @@ interface Service {
 // Sonarr/Radarr only — the other types have no webhook connection to push
 // events from.
 const WEBHOOK_TYPES = new Set(['sonarr', 'radarr'])
+// No API key: these sign in with a username and password.
+const USERPASS_TYPES = new Set(['nzbget', 'dispatcharr'])
 
 const EMPTY_FORM = {
   name: '',
@@ -59,11 +61,19 @@ export default function Services() {
   const [webhookInfo, setWebhookInfo] = useState<Record<number, { ingestion_mode: string; path: string }>>({})
   const [webhookBusy, setWebhookBusy] = useState<number | null>(null)
   const [webhookCopied, setWebhookCopied] = useState(false)
-  // NZBGet has no API key — it logs in with its own username/password,
-  // sent (and stored encrypted) as "username:password" in the key field.
+  // NZBGet and Dispatcharr have no API key — they log in with a username/
+  // password, sent (and stored encrypted) as "username:password" in the key field.
   const [nzbUser, setNzbUser] = useState('')
   const [nzbPass, setNzbPass] = useState('')
-  const credential = form.type === 'nzbget' ? (nzbUser || nzbPass ? `${nzbUser}:${nzbPass}` : '') : form.api_key
+  // Dispatcharr accepts either: a username/password, or an API key (sent as
+  // X-API-Key, like the *arrs). The key is stored with an "api key:" prefix —
+  // a Dispatcharr username can't contain a space, so it can't be mistaken for
+  // a login.
+  const [authMode, setAuthMode] = useState<'login' | 'key'>('login')
+  const usesLogin = USERPASS_TYPES.has(form.type) && !(form.type === 'dispatcharr' && authMode === 'key')
+  const credential = usesLogin
+    ? (nzbUser || nzbPass ? `${nzbUser}:${nzbPass}` : '')
+    : form.type === 'dispatcharr' ? (form.api_key ? `api key:${form.api_key}` : '') : form.api_key
 
   async function load() {
     setServices(await api.get<Service[]>('/services/'))
@@ -215,12 +225,21 @@ export default function Services() {
                 <option value="seerr">Seerr</option>
                 <option value="nzbget">NZBGet</option>
                 <option value="sabnzbd">SABnzbd</option>
+                <option value="dispatcharr">Dispatcharr</option>
               </select>
             </Field>
             <Field label="Base URL">
-              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080, dispatcharr: 9191 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </Field>
-            {form.type === 'nzbget' ? (
+            {form.type === 'dispatcharr' && (
+              <Field label="Sign in with">
+                <select className="input" value={authMode} onChange={(e) => setAuthMode(e.target.value as 'login' | 'key')}>
+                  <option value="login">Username and password</option>
+                  <option value="key">API key</option>
+                </select>
+              </Field>
+            )}
+            {usesLogin ? (
               <>
                 <Field label="Username">
                   <input className="input" autoComplete="off" value={nzbUser} onChange={(e) => setNzbUser(e.target.value)} />

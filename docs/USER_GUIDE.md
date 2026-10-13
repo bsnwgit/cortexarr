@@ -247,6 +247,29 @@ estimated time), free disk space, anything post-processing, and **Pause all
 
 ![Download history](images/downloads-history.png)
 
+## Live TV (Dispatcharr)
+
+The **Live TV** tab controls a Dispatcharr instance; it's separate from the
+media pipeline. If more than one is set up, pick one at the top. A strip
+shows who is watching now, channel count, M3U accounts and EPG sources (with
+how many are failing). Connection details are in Settings → Services.
+
+- **Streams** — what is being watched right now; analysts and admins can
+  **Stop stream**, which disconnects everyone on that channel. **Details**
+  shows the raw data Dispatcharr returned for the row.
+- **Channels** — search, filter by group, and page through. **Enable** or
+  **Disable** channels in the chosen profile, one at a time or in bulk, and
+  **Edit** a channel's name, number or group. To select many at once: the
+  checkbox at the top selects the page, shift-click selects a range, and
+  **Select all N matching** selects every channel matching your search and
+  group across all pages. A bulk change of more than 100 channels asks to
+  confirm.
+- **M3U accounts** and **EPG sources** — status, last error, and
+  **Refresh** (analysts and admins; **Refresh all** for M3U). Admins can add,
+  edit and delete them.
+
+Viewers can look but not change anything.
+
 ## Notifications (Alerts, Rules, Activities, Audit Log)
 
 Top nav → **Notifications**, next to Tracking. Four sub-tabs:
