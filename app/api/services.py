@@ -16,12 +16,14 @@ from app import audit
 from app.crypto import decrypt_str, encrypt_str
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
-from app.services import arr_http, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
+from app.services import (
+    arr_http, dispatcharr_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client,
+)
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
 
-_VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd"}
+_VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "dispatcharr"}
 _MASK = "••••••••"
 
 # Extension point for future services (scope: "build Sonarr fully, use it as
@@ -31,7 +33,7 @@ _MASK = "••••••••"
 # than a 500, so e.g. Radarr has no "series" and Sonarr has no "movies".
 _DETAIL_CLIENTS = {
     "sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client, "nzbget": nzbget_client,
-    "sabnzbd": sabnzbd_client,
+    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client,
 }
 _IMPLEMENTED_TYPES = set(_DETAIL_CLIENTS)
 
@@ -123,7 +125,7 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
         )
     # Refuse a definite type mismatch (e.g. a Radarr URL saved as Sonarr).
     # An unreachable service still saves — it may just be down right now.
-    if body.api_key:
+    if body.api_key and body.type != "dispatcharr":
         actual = await arr_http.detect_app(body.base_url, body.api_key)
         if not actual and await seerr_client.looks_like_seerr(body.base_url):
             actual = "Seerr"

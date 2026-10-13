@@ -39,6 +39,13 @@ leaving the page.
 - **NZBGet / SABnzbd** — live speed, time left, free disk, the queue with
   progress and post-processing stage, and history with failure reasons and
   **Retry**. Pause/resume a download or everything at once.
+- **Live TV (Dispatcharr)** — its own **Live TV** tab, kept apart from the
+  media pipeline. See who is watching and stop a stream; list, search and
+  filter channels, enable or disable them per profile (select a whole page,
+  shift-click a range, or every channel matching a search), and edit a
+  channel's name, number or group; refresh M3U accounts and EPG sources, and
+  add, edit or delete them (admins). Signs in with a username and password
+  or an API key, your choice per service.
 - **Request tracking** — every Seerr request followed through approval,
   Sonarr/Radarr, searching, downloading and import to available, with how
   long it's been in its stage (and episode counts for TV); alert rules flag
@@ -108,7 +115,6 @@ Planned but not built yet — kept here so none of it gets lost:
   against a real instance yet.
 - **AI provider integration** — pluggable AI providers inside Cortexarr
   itself (the MCP server for outside AI tools is built).
-- **Live TV (Dispatcharr)** — its own dashboard section.
 
 ## Screenshots
 
@@ -144,7 +150,7 @@ Native install:
 
 Docker: just Docker and Compose — the image builds the frontend itself.
 
-Either way: any of Sonarr, Radarr, Seerr, NZBGet, or SABnzbd — add only
+Either way: any of Sonarr, Radarr, Seerr, NZBGet, SABnzbd, or Dispatcharr — add only
 what you run.
 
 ## Install

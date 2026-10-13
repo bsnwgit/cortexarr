@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import ServiceIcon from '../components/ServiceIcon'
@@ -101,6 +101,9 @@ export default function ServiceDetail() {
       clearInterval(interval)
     }
   }, [id, tab, tick])
+
+  // Live TV isn't part of the media pipeline; it has its own page.
+  if (service?.type === 'dispatcharr') return <Navigate to="/livetv" replace />
 
   return (
     <div>
