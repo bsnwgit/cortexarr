@@ -234,8 +234,14 @@ async def get_overview(base_url: str, secret: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 async def list_channels(base_url: str, secret: str, *, page: int = 1, page_size: int = 50,
-                        search: str = "", group: int | None = None) -> dict[str, Any]:
+                        search: str = "", group: int | None = None,
+                        profile: int | None = None) -> dict[str, Any]:
+    """`profile` narrows to the channels enabled in that channel profile —
+    Dispatcharr's own `channel_profile_id` filter (its default, without
+    `show_disabled`, is enabled-only)."""
     params: dict[str, Any] = {"page": page, "page_size": page_size}
+    if profile is not None:
+        params["channel_profile_id"] = profile
     if search:
         params["search"] = search
     if group is not None:
@@ -249,14 +255,15 @@ _ID_CAP = 20000
 
 
 async def list_channel_ids(base_url: str, secret: str, *, search: str = "",
-                           group: int | None = None) -> list[int]:
+                           group: int | None = None, profile: int | None = None) -> list[int]:
     """Every channel id matching a search/group — for "select all N matching"
     across pages. Walks the list endpoint page by page, capped so a runaway
     count can't hold the request open."""
     ids: list[int] = []
     page = 1
     while len(ids) < _ID_CAP:
-        data = await list_channels(base_url, secret, page=page, page_size=_ID_PAGE, search=search, group=group)
+        data = await list_channels(base_url, secret, page=page, page_size=_ID_PAGE, search=search,
+                                   group=group, profile=profile)
         rows = data["results"]
         ids.extend(int(r["id"]) for r in rows if isinstance(r.get("id"), int))
         if len(rows) < _ID_PAGE or len(ids) >= data["count"]:
