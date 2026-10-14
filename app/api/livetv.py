@@ -63,20 +63,22 @@ async def channels(
     service_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     search: str = Query("", max_length=100), group: Optional[int] = None,
+    profile: Optional[int] = None,
 ):
     row, secret = await _instance(service_id, db)
     return await _run(dc.list_channels(row["base_url"], secret, page=page, page_size=page_size,
-                                       search=search, group=group))
+                                       search=search, group=group, profile=profile))
 
 
 @router.get("/{service_id}/channels/ids")
 async def channel_ids(
     service_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
     search: str = Query("", max_length=100), group: Optional[int] = None,
+    profile: Optional[int] = None,
 ):
     """All channel ids matching the filter — behind "select all N matching"."""
     row, secret = await _instance(service_id, db)
-    ids = await _run(dc.list_channel_ids(row["base_url"], secret, search=search, group=group))
+    ids = await _run(dc.list_channel_ids(row["base_url"], secret, search=search, group=group, profile=profile))
     return {"count": len(ids), "ids": ids}
 
 

@@ -269,20 +269,12 @@ interface Channel {
 interface Group { id: number; name: string }
 interface Profile { id: number; name: string; channels?: unknown }
 
-// A profile's `channels` field isn't documented either. When it's a list of
-// {channel_id|id, enabled}, on/off can be shown; otherwise it's left unknown
-// (the buttons still work — they just don't claim a state).
-function enabledMap(profile?: Profile): Map<number, boolean> | null {
+// A channel profile's `channels` is the list of channel ids enabled in it
+// (Dispatcharr's own screen reads it the same way). Anything not in the list
+// is off in that profile. Null when the field isn't a list at all.
+function enabledSet(profile?: Profile): Set<number> | null {
   if (!profile || !Array.isArray(profile.channels)) return null
-  const out = new Map<number, boolean>()
-  for (const m of profile.channels as unknown[]) {
-    if (m && typeof m === 'object') {
-      const o = m as Record<string, unknown>
-      const id = o.channel_id ?? o.id
-      if (typeof id === 'number' && typeof o.enabled === 'boolean') out.set(id, o.enabled)
-    }
-  }
-  return out.size ? out : null
+  return new Set((profile.channels as unknown[]).filter((c): c is number => typeof c === 'number'))
 }
 
 export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & { tick: number }) {
@@ -295,6 +287,9 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
   const [groups, setGroups] = useState<Group[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [profileId, setProfileId] = useState<number | null>(null)
+  // 'all' lists every channel (each marked on/off for the chosen profile);
+  // 'enabled' lists only what's switched on in that profile.
+  const [view, setView] = useState<'all' | 'enabled'>('all')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastIndex, setLastIndex] = useState<number | null>(null)
   const [selectingAll, setSelectingAll] = useState(false)
@@ -303,6 +298,7 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<Channel | null>(null)
   const [editError, setEditError] = useState('')
+  const [profileError, setProfileError] = useState('')
   const pageSize = 50
 
   useEffect(() => {
@@ -312,14 +308,19 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
       .then((p) => {
         setProfiles(p)
         setProfileId((cur) => cur ?? p[0]?.id ?? null)
+        setProfileError('')
       })
-      .catch(() => setProfiles([]))
+      .catch((e) => {
+        setProfiles([])
+        setProfileError(errMsg(e, 'Could not load channel profiles'))
+      })
   }, [serviceId, tick])
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
     if (query) params.set('search', query)
     if (group) params.set('group', group)
+    if (view === 'enabled' && profileId !== null) params.set('profile', String(profileId))
     try {
       const d = await api.get<{ count: number; results: Channel[] }>(`/livetv/${serviceId}/channels?${params}`)
       setChannels(d.results)
@@ -329,14 +330,14 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
       setError(errMsg(e, 'Failed to load channels'))
       setChannels((c) => c ?? [])
     }
-  }, [serviceId, page, query, group])
+  }, [serviceId, page, query, group, view, profileId])
 
   useEffect(() => {
     load()
   }, [load, tick])
 
   const profile = profiles.find((p) => p.id === profileId)
-  const enabled = useMemo(() => enabledMap(profile), [profile])
+  const enabled = useMemo(() => enabledSet(profile), [profile])
   const groupName = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups])
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
 
@@ -350,6 +351,7 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
       setSelected(new Set())
       const p = await api.get<Profile[]>(`/livetv/${serviceId}/profiles`)
       setProfiles(p)
+      await load() // in the enabled-only view, rows enter or leave the list
     } catch (e) {
       setError(errMsg(e, 'Could not change channels'))
     } finally {
@@ -415,6 +417,7 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
       const params = new URLSearchParams()
       if (query) params.set('search', query)
       if (group) params.set('group', group)
+      if (view === 'enabled' && profileId !== null) params.set('profile', String(profileId))
       const d = await api.get<{ ids: number[] }>(`/livetv/${serviceId}/channels/ids?${params}`)
       setSelected(new Set(d.ids))
       setError('')
@@ -435,6 +438,7 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
   return (
     <div className="bg-slate-925 border border-slate-800 rounded-xl p-3 sm:p-4">
       <Notice error={error} ok={ok} />
+      {profileError && <Notice error={`Channel profiles didn't load: ${profileError}`} />}
       <div className="flex flex-wrap items-end gap-2 mb-3">
         <form
           className="flex gap-2"
@@ -451,13 +455,30 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
           <option value="">All groups</option>
           {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
-        {canAct && profiles.length > 0 && (
-          <label className="flex items-center gap-2 text-sm text-slate-400 ml-auto">
-            Profile
-            <select className="input w-40" value={profileId ?? ''} onChange={(e) => setProfileId(Number(e.target.value))}>
-              {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        {profiles.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            <label className="flex items-center gap-2 text-sm text-slate-400">
+              Profile
+              <select
+                className="input w-40"
+                value={profileId ?? ''}
+                onChange={(e) => { setPage(1); setProfileId(Number(e.target.value)) }}
+              >
+                {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <select
+              className="input w-56"
+              value={view}
+              aria-label="Which channels to list"
+              onChange={(e) => { setPage(1); setView(e.target.value as 'all' | 'enabled') }}
+            >
+              <option value="all">All channels</option>
+              <option value="enabled">
+                Enabled in {profile?.name ?? 'profile'}{enabled ? ` (${enabled.size})` : ''}
+              </option>
             </select>
-          </label>
+          </div>
         )}
       </div>
 
@@ -504,7 +525,7 @@ export function ChannelsPanel({ serviceId, accent, canAct, tick }: PanelProps & 
             </li>
           )}
           {channels.map((c, index) => {
-            const on = enabled?.get(c.id)
+            const on = enabled ? enabled.has(c.id) : undefined
             return (
               <li key={c.id} className="flex items-center gap-3 py-2">
                 {canAct && (

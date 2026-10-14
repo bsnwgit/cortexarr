@@ -257,8 +257,12 @@ how many are failing). Connection details are in Settings → Services.
 - **Streams** — what is being watched right now; analysts and admins can
   **Stop stream**, which disconnects everyone on that channel. **Details**
   shows the raw data Dispatcharr returned for the row.
-- **Channels** — search, filter by group, and page through. **Enable** or
-  **Disable** channels in the chosen profile, one at a time or in bulk, and
+- **Channels** — search, filter by group, and page through. Pick a
+  **Profile**: each channel shows **Enabled** or **Disabled** for it, and the
+  list filter beside it switches between **All channels** and **Enabled in
+  {profile}**, which lists only what is switched on there (with the count).
+  **Enable** or **Disable** channels in the chosen profile, one at a time or
+  in bulk, and
   **Edit** a channel's name, number or group. To select many at once: the
   checkbox at the top selects the page, shift-click selects a range, and
   **Select all N matching** selects every channel matching your search and
