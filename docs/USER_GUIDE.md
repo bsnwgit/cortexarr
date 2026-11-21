@@ -38,12 +38,14 @@ right now:
   download with its progress, and any download that failed in the last day
   with the reason.
 
-If your admin has set up a **Library** scan, a **Duplicate files** panel sits
-at the very top, above these cards, and again on Tracking. It lists every
-movie folder with more than one video file and every episode (by its S##E##
-code) held by more than one file, with the full path of each. Admins can
-**Scan now** and **Delete** the extra copy. A file with no S##E## in its name
-is listed too, with a note to rename it.
+If your admin has turned on duplicate scanning for a Sonarr or Radarr service,
+its card shows an amber **N duplicates** pill beside the status pill whenever
+the scan has found any, and a **Duplicates** tab appears in the top nav. The
+tab lists every movie folder with more than one video file and every episode
+(by its S##E## code) held by more than one file, with the full path of each,
+the service that found it, and a button that opens that series or movie.
+Admins can **Scan now** and **Delete** the extra copy. A file with no S##E## in
+its name is listed too, with a note to rename it.
 
 Every service shows one of:
 

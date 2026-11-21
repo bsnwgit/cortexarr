@@ -101,7 +101,7 @@ async def export_config(body: ExportRequest, admin: AdminUser, db: aiosqlite.Con
 
     async with db.execute(
         "SELECT id, name, type, base_url, api_key_enc, poll_interval_seconds, retry_count, "
-        "retry_backoff_seconds, ingestion_mode FROM service_instances ORDER BY name",
+        "retry_backoff_seconds, ingestion_mode, duplicate_scan FROM service_instances ORDER BY name",
     ) as cur:
         service_rows = await cur.fetchall()
     name_by_id = {r["id"]: r["name"] for r in service_rows}
@@ -111,6 +111,8 @@ async def export_config(body: ExportRequest, admin: AdminUser, db: aiosqlite.Con
         "api_key": decrypt_str(r["api_key_enc"]) if (body.include_credentials or r["type"] == "library") and r["api_key_enc"] else "",
         "poll_interval_seconds": r["poll_interval_seconds"], "retry_count": r["retry_count"],
         "retry_backoff_seconds": r["retry_backoff_seconds"], "ingestion_mode": r["ingestion_mode"],
+        # Where to look for duplicate files — a key *path*, not a secret, so it always goes.
+        "duplicate_scan": json.loads(r["duplicate_scan"] or "{}") or None,
     } for r in service_rows]
 
     all_settings = await settings_api.get_all_settings(admin, db)
@@ -153,6 +155,7 @@ class ImportServiceEntry(BaseModel):
     retry_count: int = 3
     retry_backoff_seconds: int = 5
     ingestion_mode: str = "poll"
+    duplicate_scan: Optional[dict[str, Any]] = None
 
 
 class ImportRuleEntry(BaseModel):

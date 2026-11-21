@@ -62,14 +62,6 @@ const ACCENTS: Record<string, ServiceAccent> = {
     hoverBorder: 'hover:border-orange-500/40',
     band: 'from-orange-500/25 via-orange-500/10 to-transparent',
   },
-  // Library (duplicate-file scan) — cyan, which no other service uses.
-  library: {
-    text: 'text-cyan-300',
-    bg: 'bg-cyan-500/15',
-    border: 'border-cyan-500/40',
-    hoverBorder: 'hover:border-cyan-500/40',
-    band: 'from-cyan-500/25 via-cyan-500/10 to-transparent',
-  },
   // Dispatcharr (live TV) — sky, a hue none of the media pipeline's services use.
   dispatcharr: {
     text: 'text-sky-300',

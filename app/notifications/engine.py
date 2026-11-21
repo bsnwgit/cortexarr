@@ -39,8 +39,9 @@ from typing import Any, Optional
 
 import aiosqlite
 
+from app import duplicates
 from app.notifications.sender import CHANNELS, Message, send
-from app.services import library_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
+from app.services import nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError, ServiceApiError
 
 log = logging.getLogger("cortexarr.alerts")
@@ -48,7 +49,7 @@ log = logging.getLogger("cortexarr.alerts")
 STATE_EVENTS = ("unreachable", "error", "warning", "stuck",
                 # A Seerr request sitting in one stage too long (app/tracking.py).
                 "stalled_approval", "stalled_sending", "stalled_searching", "stalled_downloading", "stalled_importing",
-                # A movie folder with two video files, or one episode in two files (library_client.py).
+                # A movie folder with two video files, or one episode in two files (duplicates.py).
                 "duplicate")
 ONESHOT_EVENTS = ("download_failed", "request_issue")
 EVENTS = STATE_EVENTS + ONESHOT_EVENTS
@@ -135,12 +136,6 @@ async def _item_conditions(service: aiosqlite.Row, api_key: str, baseline: datet
                 out.append(Condition(f"failed:{h.get('id')}", "download_failed", h.get("name") or "",
                                      h.get("reason") or h.get("detail") or ""))
 
-    elif kind == "library":
-        # check_health just scanned; this is that scan, not a second one.
-        scan = library_client.last_scan(base_url)
-        for f in (scan.findings if scan else []):
-            out.append(Condition(f.key, "duplicate", f.title, "; ".join([f.reason, *f.files])))
-
     elif kind == "seerr":
         for i in await seerr_client.get_issues(base_url, api_key):
             when = _parse(i.get("created_at"))
@@ -180,38 +175,6 @@ async def _stalled_conditions(db: aiosqlite.Connection, seerr_id: int) -> Option
         out.append(Condition(f"track:{t['request_id']}:{t['stage']}", f"stalled_{t['stage']}",
                              f"{name} — {tracking.STAGE_LABELS[t['stage']].lower()}", detail, t.get("since")))
     return out
-
-
-async def _store_findings(db: aiosqlite.Connection, sid: int, base_url: str) -> None:
-    """Keep the Duplicates panel's rows in step with the scan: current ones
-    in, ones that cleared out. The file lists live here (not in the alert's
-    text) because a delete is only allowed for a file listed in this table."""
-    scan = library_client.last_scan(base_url)
-    if scan is None:
-        return
-    stamp = _sql_now()
-    for f in scan.findings:
-        await db.execute(
-            "INSERT INTO duplicate_findings (service_instance_id, key, kind, title, reason, files, first_seen, last_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(service_instance_id, key) DO UPDATE SET title = excluded.title, reason = excluded.reason, "
-            "files = excluded.files, last_seen = excluded.last_seen",
-            (sid, f.key, f.kind, f.title, f.reason, json.dumps(f.files), stamp, stamp),
-        )
-    keep = [f.key for f in scan.findings]
-    if keep:
-        await db.execute(
-            f"DELETE FROM duplicate_findings WHERE service_instance_id = ? AND key NOT IN ({', '.join('?' for _ in keep)})",
-            (sid, *keep),
-        )
-    else:
-        await db.execute("DELETE FROM duplicate_findings WHERE service_instance_id = ?", (sid,))
-    await db.execute(
-        "INSERT INTO library_scans (service_instance_id, scanned_at, files_seen, seconds) VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(service_instance_id) DO UPDATE SET scanned_at = excluded.scanned_at, "
-        "files_seen = excluded.files_seen, seconds = excluded.seconds",
-        (sid, stamp, scan.files_seen, scan.seconds),
-    )
 
 
 async def _reconcile(db: aiosqlite.Connection, sid: int, prefix: str, now: list[Condition]) -> list[aiosqlite.Row]:
@@ -353,6 +316,11 @@ async def process(db: aiosqlite.Connection, service: aiosqlite.Row, api_key: str
             items = await _item_conditions(service, api_key, baseline)
         except (ConnectivityError, ServiceApiError) as exc:
             log.info("alert item scan skipped for service %s: %s", sid, exc)
+    duplicates_now: Optional[list[Condition]] = None
+    if service["type"] in duplicates.SCAN_TYPES:
+        rows = await duplicates.conditions(db, service)
+        if rows is not None:
+            duplicates_now = [Condition(k, ev, t, d) for k, ev, t, d in rows]
     stalled: Optional[list[Condition]] = None
     if connectivity_ok and service["type"] == "seerr":
         stalled = await _stalled_conditions(db, sid)
@@ -362,10 +330,13 @@ async def process(db: aiosqlite.Connection, service: aiosqlite.Row, api_key: str
     # 2. One short write: record what's wrong now, work out what to send.
     cleared = await _reconcile(db, sid, "health:", _health_conditions(service, status, summary))
     if items is not None:
-        for prefix in ("stuck:", "failed:", "issue:", "movie:", "series:"):
+        for prefix in ("stuck:", "failed:", "issue:"):
             cleared += await _reconcile(db, sid, prefix, [c for c in items if c.key.startswith(prefix)])
-        if service["type"] == "library":
-            await _store_findings(db, sid, service["base_url"])
+    # The service's own duplicate scan (app/duplicates.py) — judged even when the
+    # service itself is down, since the files are on a different machine.
+    if duplicates_now is not None:
+        for prefix in ("movie:", "series:", "scan:"):
+            cleared += await _reconcile(db, sid, prefix, [c for c in duplicates_now if c.key.startswith(prefix)])
     if stalled is not None:
         cleared += await _reconcile(db, sid, "track:", stalled)
 

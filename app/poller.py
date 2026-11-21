@@ -30,9 +30,8 @@ import aiosqlite
 from app.crypto import decrypt_str
 from app.database import DB_PATH
 from app.notifications import engine as alerts
-from app.services import (
-    dispatcharr_client, library_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client,
-)
+from app import duplicates
+from app.services import dispatcharr_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
 from app.services.errors import ConnectivityError
 
 log = logging.getLogger("cortexarr.poller")
@@ -41,7 +40,7 @@ log = logging.getLogger("cortexarr.poller")
 # instances of these.
 _HEALTH_CLIENTS = {
     "sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client, "nzbget": nzbget_client,
-    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client, "library": library_client,
+    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client,
 }
 
 _TICK_SECONDS = 5
@@ -101,40 +100,6 @@ async def _check_one(db: aiosqlite.Connection, service: aiosqlite.Row) -> None:
         log.exception("Alert processing failed for service %s", service["id"])
 
 
-# A library check lists whole folder trees over SSH and can take minutes, so it
-# runs on its own connection in the background instead of holding up every other
-# service's check. One at a time per library.
-_library_running: set[int] = set()
-_library_tasks: set[asyncio.Task] = set()    # held so a running scan isn't garbage-collected
-
-
-def start_library_check(service: aiosqlite.Row) -> bool:
-    """Begin a library's scan in the background. False when one is already running."""
-    if service["id"] in _library_running:
-        return False
-    _library_running.add(service["id"])
-    task = asyncio.create_task(_check_library(service))
-    _library_tasks.add(task)
-    task.add_done_callback(_library_tasks.discard)
-    return True
-
-
-def library_scanning(service_id: int) -> bool:
-    return service_id in _library_running
-
-
-async def _check_library(service: aiosqlite.Row) -> None:
-    try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            await db.execute("PRAGMA busy_timeout=5000")
-            await _check_one(db, service)
-    except Exception:
-        log.exception("Library check failed for service %s", service["id"])
-    finally:
-        _library_running.discard(service["id"])
-
-
 async def _prune(db: aiosqlite.Connection) -> None:
     retention_days = await _get_setting(db, "health_retention_days", _DEFAULT_RETENTION_DAYS)
     await db.execute(
@@ -180,13 +145,18 @@ async def run_forever() -> None:
                         last = _dt.datetime.fromisoformat(service["last_checked_at"]).replace(tzinfo=_dt.timezone.utc)
                         elapsed = (_dt.datetime.now(_dt.timezone.utc) - last).total_seconds()
                         due = elapsed >= service["poll_interval_seconds"]
-                    if due and service["type"] == "library":
-                        start_library_check(service)
-                    elif due:
+                    if due:
                         try:
                             await _check_one(db, service)
                         except Exception:
                             log.exception("Health check failed for service %s", service["id"])
+                    # The duplicate-file scan has its own interval and runs in the
+                    # background, so a slow listing never delays a health check.
+                    if service["type"] in duplicates.SCAN_TYPES:
+                        try:
+                            await duplicates.start_if_due(db, service)
+                        except Exception:
+                            log.exception("Duplicate scan scheduling failed for service %s", service["id"])
 
                 if now - last_prune > _PRUNE_EVERY_SECONDS:
                     await _prune(db)

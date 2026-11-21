@@ -14,6 +14,7 @@ import SettingsNotifications from './pages/SettingsNotifications'
 import Users from './pages/Users'
 import ApiTokens from './pages/ApiTokens'
 import Tracking from './pages/Tracking'
+import Duplicates from './pages/Duplicates'
 import LiveTV from './pages/LiveTV'
 import History from './pages/History'
 import Status from './pages/Status'
@@ -53,6 +54,7 @@ function AppRoutes() {
           <Route path="users" element={<Users />} />
           <Route path="tokens" element={<ApiTokens />} />
         </Route>
+        <Route path="duplicates" element={<Duplicates />} />
         <Route path="tracking" element={<Tracking />} />
         <Route path="livetv" element={<LiveTV />} />
         <Route path="history" element={<History />} />
