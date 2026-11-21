@@ -3,7 +3,7 @@
 ## Adding a monitored service
 
 User menu → **Settings** → **Services** → **New service**. Pick a
-type (Sonarr, Radarr, Seerr, NZBGet, SABnzbd, or Dispatcharr), give it a name, base URL,
+type (Sonarr, Radarr, Seerr, NZBGet, SABnzbd, Dispatcharr, or Library), give it a name, base URL,
 and API key, then
 **Test connection** before saving — this checks the URL and key actually
 work, and that the URL really is the type you picked. The API key is under
@@ -27,6 +27,10 @@ account is allowed to do is the most Cortexarr can do. Its health shows
 as errored. A Dispatcharr service doesn't appear on the Dashboard,
 Statistics or Tracking — it has its own **Live TV** tab.
 
+A **Library** isn't an app — it's a machine (a NAS, say) that holds your movie
+and TV folders, and Cortexarr looks through those folders over SSH for
+duplicate files. See [Duplicate-file scans](#duplicate-file-scans) below.
+
 Seerr has no health endpoint of its own; its status shows **Warning** when
 Seerr reports an available update or a pending restart.
 
@@ -40,6 +44,66 @@ also get a **Webhook** button.
 
 A read-only JSON summary of every service's health is served, without
 login, at `/api/status/` — for embedding in a homelab dashboard.
+
+## Duplicate-file scans
+
+A **Library** service lists your real movie and TV folders over SSH and flags
+duplicates. It reads the folders themselves because Sonarr, Radarr and Plex
+only know the files they have indexed — a stray second file can slip past all
+of them.
+
+**What counts as a duplicate**
+
+- *Movies* — a movie folder (a direct child of a movie folder you list) with
+  more than one video file.
+- *Series* — the same episode code in the name of more than one file under a
+  series folder, e.g. `Yellowjackets - S03E02`. Season folders don't matter,
+  only the code, so a copy in a different season folder still counts.
+  `S03E02E03` and `S03E02-E03` count as both episodes. Codes compare as
+  numbers, so `s3e2` and `S03E02` are the same episode.
+- A series file with **no** `S##E##` in its name is flagged too. It isn't
+  known to be a copy of anything, so it can't be deleted from Cortexarr —
+  rename it.
+
+Only video files count (mkv, mp4, m4v, avi, mov, wmv, ts, m2ts, mts, mpg,
+mpeg, flv, webm, iso); subtitles, `.nfo` and artwork are ignored, and so are
+files in `Extras`, `Featurettes`, `Trailers`, `Behind The Scenes`,
+`Deleted Scenes`, `Interviews`, `Scenes`, `Shorts`, `Other` and `Sample(s)`
+folders below a movie or series folder, and files named like a sample or a
+trailer.
+
+**Setting one up** — *Settings → Services → New service → Library*:
+
+- **Host** — the machine's name or address.
+- **SSH user**, **SSH port**, and **SSH key file** — the path to a private
+  key *on the machine Cortexarr runs on*. Make a key just for Cortexarr and
+  authorise its public half on the library machine; Cortexarr only needs the
+  path and never reads or stores the key itself. In Docker, put the key under
+  `/data` (for example `/data/ssh/library_key`, readable only by its owner)
+  so it survives updates. The first connection records the machine's host
+  key in `known_hosts` next to `config.yaml`; after that a changed host key
+  is refused.
+- **Movie folders** and **Series folders** — full paths on the library
+  machine, one per line.
+- **Scan interval** — how often to rescan; it starts at 6 hours because a
+  scan lists whole libraries.
+
+The SSH account must be able to run `find` in those folders, and `rm` in them
+if you want **Delete**. **Test connection** checks the login and that each
+folder exists without scanning.
+
+**What you get**
+
+- A **Duplicate files** panel at the top of the Dashboard and Tracking pages:
+  each duplicate with its files, **Scan now**, and (admins) **Delete** beside
+  each copy. Delete asks first, only accepts a file the last scan listed, and
+  refuses to remove the last copy.
+- A **Duplicate file** alert event for the alert rules (*Notifications →
+  Alerts → Rules*), so duplicates reach your channels, can be snoozed, and
+  say when they're resolved.
+
+Deleting removes the file from the library machine only; Sonarr and Radarr
+notice the change on their next rescan.
 
 ## Sonarr/Radarr webhooks
 
@@ -97,6 +161,8 @@ Nothing is sent until you add a rule: top nav → **Notifications** →
     failed (e.g. "not enough free space").
   - *Download failed* — NZBGet/SABnzbd.
   - *Request failed or issue reported* — Seerr.
+  - *Duplicate file* — a movie folder with two video files, or one episode
+    in two files, found by a Library scan (see Duplicate-file scans).
   - *Request waiting for approval* / *not in Sonarr/Radarr* / *still
     searching* / *still downloading* / *stuck importing* — a Seerr request
     that has sat in that stage of the pipeline (see Tracking in the User

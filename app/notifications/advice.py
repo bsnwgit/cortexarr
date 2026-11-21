@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_NAMES = {"sonarr": "Sonarr", "radarr": "Radarr", "seerr": "Seerr", "nzbget": "NZBGet", "sabnzbd": "SABnzbd"}
+APP_NAMES = {"sonarr": "Sonarr", "radarr": "Radarr", "seerr": "Seerr", "nzbget": "NZBGet", "sabnzbd": "SABnzbd", "library": "The library"}
 
 # id -> (button label, removes something from the download client)
 ACTIONS: dict[str, tuple[str, bool]] = {
@@ -69,7 +69,11 @@ def diagnose(problem: dict[str, Any]) -> dict[str, Any]:
     key = problem.get("key") or ""
     advice, actions = "", []
 
-    if event == "unreachable":
+    if event == "unreachable" and kind == "library":
+        advice = (f"Cortexarr can't log in to {problem.get('service_name', app)} over SSH. Check the machine is up, "
+                  f"then the user, port, key path and folders under Services — Test connection says which.")
+        actions = ["test_connection"]
+    elif event == "unreachable":
         advice = (f"Cortexarr can't reach {problem.get('service_name', app)}. Check it's running, then check the "
                   f"URL and {'username/password' if kind == 'nzbget' else 'API key'} under Services — a "
                   f"rejected key shows the same way. Test connection says which.")
@@ -91,6 +95,9 @@ def diagnose(problem: dict[str, Any]) -> dict[str, Any]:
             actions = ["retry_request", "clear_request"]
         else:
             advice = "Someone reported a problem with this title. Review it in Seerr."
+    elif event == "duplicate":
+        advice = ("More than one file where there should be one. Open the Duplicates panel on the dashboard to see "
+                  "the files and delete the extra copy — or, for a file with no S##E## in its name, rename it.")
     elif event == "stalled_approval":
         advice = "This request is waiting for someone to approve it. Approve it here, or decline it in Seerr."
         actions = ["approve_request", "clear_request"]
