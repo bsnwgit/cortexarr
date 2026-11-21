@@ -5,6 +5,7 @@ import UserMenu from './UserMenu'
 import CortexarrLogo from './icons/CortexarrLogo'
 import { api } from '../api/client'
 import { setTimeZone } from '../utils/time'
+import { useDuplicates } from '../utils/useDuplicates'
 
 // Same tab/layout shape as the rest of the bsnw suite (top nav, active-tab
 // underline, content panel below) — see Positioning decision in project
@@ -12,6 +13,7 @@ import { setTimeZone } from '../utils/time'
 const TABS = [
   { to: '/', label: 'Dashboard' },
   { to: '/tracking', label: 'Tracking' },
+  // { to: '/duplicates' } is added below, only while a scan has found something.
   { to: '/livetv', label: 'Live TV' },
   { to: '/alerts', label: 'Notifications' },
   { to: '/history', label: 'History' },
@@ -22,6 +24,7 @@ export default function Layout() {
   // Pages render once the time zone is known, so no date is drawn in the
   // wrong zone first. A failed load falls back to the browser's own zone.
   const [zoneReady, setZoneReady] = useState(false)
+  const { total: duplicateCount } = useDuplicates()
   useEffect(() => {
     api
       .get<{ timezone?: string }>('/settings/')
@@ -42,7 +45,7 @@ export default function Layout() {
             <UserMenu />
           </div>
           <nav className="flex gap-1 overflow-x-auto pb-2 -mb-px">
-            {TABS.map((tab) => (
+            {[...TABS.slice(0, 2), ...(duplicateCount > 0 ? [{ to: '/duplicates', label: `Duplicates (${duplicateCount})` }] : []), ...TABS.slice(2)].map((tab) => (
               <NavLink
                 key={tab.to}
                 to={tab.to}

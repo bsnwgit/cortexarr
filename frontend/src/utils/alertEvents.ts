@@ -28,6 +28,6 @@ export const EVENTS: { key: Event; label: string; hint: string; types: string[] 
   { key: 'stalled_searching', label: 'Request still searching', hint: 'In Sonarr/Radarr with nothing found to download yet.', types: ['seerr'], state: true },
   { key: 'stalled_downloading', label: 'Request still downloading', hint: 'Downloading for longer than this.', types: ['seerr'], state: true },
   { key: 'stalled_importing', label: 'Request stuck importing', hint: "Downloaded but not imported.", types: ['seerr'], state: true },
-  { key: 'duplicate', label: 'Duplicate file', hint: 'A movie folder with two video files, or the same S##E## in two files (a library scan).', types: ['library'], state: true },
+  { key: 'duplicate', label: 'Duplicate file', hint: 'A movie folder with two video files, or the same S##E## in two files (a duplicate-file scan).', types: ['sonarr', 'radarr'], state: true },
 ]
 export const EVENT_LABEL = Object.fromEntries(EVENTS.map((e) => [e.key, e.label])) as Record<Event, string>

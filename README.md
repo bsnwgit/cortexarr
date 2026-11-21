@@ -46,11 +46,13 @@ leaving the page.
   channel's name, number or group; refresh M3U accounts and EPG sources, and
   add, edit or delete them (admins). Signs in with a username and password
   or an API key, your choice per service.
-- **Duplicate files** — a **Library** service looks through your movie and TV
-  folders over SSH (the system `ssh`, no mount needed) and flags a movie folder
-  with more than one video file, and an episode code like `S03E02` held by more
-  than one file. A **Duplicate files** panel on the Dashboard and Tracking, a
-  **Duplicate file** alert event, and (admins) a button to delete the extra copy.
+- **Duplicate files** — each Sonarr and Radarr service can look through its own
+  folders over SSH (the system `ssh`, no mount needed): Radarr flags a movie
+  folder with more than one video file, Sonarr an episode code like `S03E02` held
+  by more than one file. A count pill on the service's Dashboard card, a
+  **Duplicates** tab that appears only while there are any (with the service that
+  found each, a link to the series or movie, and for admins a button to delete the
+  extra copy), and a **Duplicate file** alert event.
 - **Request tracking** — every Seerr request followed through approval,
   Sonarr/Radarr, searching, downloading and import to available, with how
   long it's been in its stage (and episode counts for TV); alert rules flag

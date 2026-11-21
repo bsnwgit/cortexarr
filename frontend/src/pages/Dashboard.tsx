@@ -3,12 +3,11 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import ServiceCard, { type DashboardService } from '../components/ServiceCard'
 import PageSpinner from '../components/PageSpinner'
-import DuplicatesPanel from '../components/DuplicatesPanel'
+import { useDuplicates } from '../utils/useDuplicates'
 
 const FULL_WIDTH_TYPES = new Set(['seerr'])
 // Live TV has its own page; the dashboard is the media pipeline.
-// A library (duplicate-file scanner) isn't a pipeline stage either — it has the Duplicates panel.
-const NOT_IN_PIPELINE = new Set(['dispatcharr', 'library'])
+const NOT_IN_PIPELINE = new Set(['dispatcharr'])
 
 // One card per monitored service — Sonarr's shows fan art from whatever
 // it's currently downloading plus state pills (active/queue/missing), not
@@ -17,6 +16,8 @@ const NOT_IN_PIPELINE = new Set(['dispatcharr', 'library'])
 export default function Dashboard() {
   const [services, setServices] = useState<DashboardService[]>([])
   const [loading, setLoading] = useState(true)
+  // How many duplicate files each service's scan has found — a pill on its card, only when there are some.
+  const { data: duplicateData } = useDuplicates()
 
   async function load() {
     // /status/ is public and deliberately has no URLs; the signed-in
@@ -38,7 +39,6 @@ export default function Dashboard() {
 
   return (
     <div>
-      <DuplicatesPanel />
       <h2 className="text-lg font-semibold text-slate-100 mb-4">Pipeline</h2>
 
       {loading ? (
@@ -54,13 +54,13 @@ export default function Dashboard() {
           {services
             .filter((s) => FULL_WIDTH_TYPES.has(s.type))
             .map((s) => (
-              <ServiceCard key={s.id} service={s} />
+              <ServiceCard key={s.id} service={{ ...s, duplicates: duplicateData.counts[s.id] }} />
             ))}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {services
               .filter((s) => !FULL_WIDTH_TYPES.has(s.type))
               .map((s) => (
-                <ServiceCard key={s.id} service={s} />
+                <ServiceCard key={s.id} service={{ ...s, duplicates: duplicateData.counts[s.id] }} />
               ))}
           </div>
         </div>

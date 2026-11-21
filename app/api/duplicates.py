@@ -1,8 +1,10 @@
 """
-/api/duplicates/* — duplicate movie and episode files found by scanning a
-library over SSH (app/services/library_client.py). The scan runs on the
-poller and feeds the 'duplicate' alert event; these routes are the Duplicates
-panel's: what the last scan found, scan now, and delete an extra copy.
+/api/duplicates/* — duplicate movie and episode files found by each Sonarr and
+Radarr service's own scan (app/duplicates.py, rules in
+app/services/duplicate_scan.py). The scan runs on the poller and feeds the
+'duplicate' alert event; these routes are the Duplicates page's and the
+Dashboard pills': what the last scans found, scan now, test a scan's settings,
+and delete an extra copy.
 
 Delete is the only thing here that removes anything, so it is admin-only and
 narrow: the file must be one the last scan listed under a finding that still
@@ -13,16 +15,16 @@ it isn't known to be a copy of anything.
 from __future__ import annotations
 
 import json
+from typing import Optional
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app import audit, poller
-from app.crypto import decrypt_str
+from app import audit, duplicates
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
-from app.services import library_client
+from app.services import duplicate_scan
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
@@ -33,56 +35,84 @@ class DeleteRequest(BaseModel):
     path: str = Field(min_length=1, max_length=4000, description="One of that finding's files")
 
 
-async def _library(db: aiosqlite.Connection, service_id: int) -> aiosqlite.Row:
-    async with db.execute("SELECT * FROM service_instances WHERE id = ? AND type = 'library'", (service_id,)) as cur:
+class TestRequest(BaseModel):
+    duplicate_scan: dict = Field(description="The scan settings to try, as in a service's duplicate_scan")
+
+
+async def _service(db: aiosqlite.Connection, service_id: int) -> aiosqlite.Row:
+    async with db.execute(
+        "SELECT * FROM service_instances WHERE id = ? AND type IN ('sonarr', 'radarr')", (service_id,),
+    ) as cur:
         row = await cur.fetchone()
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such library")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such Sonarr or Radarr service")
     return row
 
 
 @router.get("/")
-async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(get_db)):
-    """Every library, when it was last scanned, and every duplicate it holds."""
+async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(get_db), service_id: Optional[int] = None):
+    """Every scanning service, when it was last scanned, and every duplicate
+    found. `counts` is findings per service, for the Dashboard pills."""
     async with db.execute(
-        "SELECT s.id, s.name, s.enabled, s.maintenance_mode, l.scanned_at, l.files_seen, l.seconds, "
-        "(SELECT status FROM health_snapshots h WHERE h.service_instance_id = s.id ORDER BY checked_at DESC LIMIT 1) "
-        "AS health "
+        "SELECT s.*, l.scanned_at, l.files_seen, l.seconds, l.error "
         "FROM service_instances s LEFT JOIN library_scans l ON l.service_instance_id = s.id "
-        "WHERE s.type = 'library' ORDER BY s.name",
+        "WHERE s.type IN ('sonarr', 'radarr') ORDER BY s.name",
     ) as cur:
-        libraries = [dict(r) for r in await cur.fetchall()]
-    for lib in libraries:
-        lib["enabled"], lib["maintenance_mode"] = bool(lib["enabled"]), bool(lib["maintenance_mode"])
-        lib["scanning"] = poller.library_scanning(lib["id"])
+        rows = [r for r in await cur.fetchall() if duplicates.config_of(r)["enabled"]]
+    if service_id is not None:
+        rows = [r for r in rows if r["id"] == service_id]
+    by_id = {r["id"]: r for r in rows}
 
-    async with db.execute(
-        "SELECT f.*, s.name AS service_name FROM duplicate_findings f "
-        "JOIN service_instances s ON s.id = f.service_instance_id ORDER BY s.name, f.kind, f.title",
-    ) as cur:
-        rows = await cur.fetchall()
-    findings = []
-    for r in rows:
-        files = json.loads(r["files"] or "[]")
-        findings.append({
-            "service_id": r["service_instance_id"], "service_name": r["service_name"], "key": r["key"],
-            "kind": r["kind"], "title": r["title"], "reason": r["reason"], "files": files,
-            "deletable": len(files) >= 2, "first_seen": r["first_seen"],
-        })
-    return {"libraries": libraries, "findings": findings}
+    services = [{
+        "id": r["id"], "name": r["name"], "type": r["type"], "maintenance_mode": bool(r["maintenance_mode"]),
+        "enabled": bool(r["enabled"]), "scanned_at": r["scanned_at"], "files_seen": r["files_seen"],
+        "seconds": r["seconds"], "error": r["error"] or "", "scanning": duplicates.scanning(r["id"]),
+    } for r in rows]
+
+    findings: list[dict] = []
+    if by_id:
+        async with db.execute(
+            f"SELECT * FROM duplicate_findings WHERE service_instance_id IN ({', '.join('?' for _ in by_id)}) "
+            "ORDER BY title", tuple(by_id),
+        ) as cur:
+            found = await cur.fetchall()
+        ids = {sid: await duplicates.folder_ids(by_id[sid]) for sid in {f["service_instance_id"] for f in found}}
+        for f in found:
+            svc = by_id[f["service_instance_id"]]
+            files = json.loads(f["files"] or "[]")
+            folder = duplicates.folder_of(files, duplicates.config_of(svc)["paths"])
+            findings.append({
+                "service_id": svc["id"], "service_name": svc["name"], "service_type": svc["type"],
+                "key": f["key"], "kind": f["kind"], "title": f["title"], "reason": f["reason"], "files": files,
+                "deletable": len(files) >= 2, "first_seen": f["first_seen"],
+                # The series/movie in the service itself, when it can be matched by its folder.
+                "target_id": ids[svc["id"]].get(folder),
+            })
+    counts: dict[int, int] = {}
+    for f in findings:
+        counts[f["service_id"]] = counts.get(f["service_id"], 0) + 1
+    return {"services": services, "findings": findings, "counts": counts}
+
+
+@router.post("/test")
+async def test_settings(body: TestRequest, admin: AdminUser):
+    """Log in with these (possibly unsaved) settings and check each folder exists, without scanning."""
+    ok, message = await duplicate_scan.test_connection(body.duplicate_scan)
+    return {"ok": ok, "message": message}
 
 
 @router.post("/{service_id}/scan", status_code=status.HTTP_202_ACCEPTED)
 async def scan_now(service_id: int, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db)):
-    """Start a scan now instead of waiting for the next poll. It runs in the
-    background and can take minutes; the panel shows 'scanning' until it ends."""
-    lib = await _library(db, service_id)
-    if not lib["enabled"] or lib["maintenance_mode"]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="This library is disabled or in maintenance mode")
-    started = poller.start_library_check(lib)
-    await audit.record(db, user=admin, action="library.scan", target_type="service_instance",
-                       target_id=service_id, detail={"name": lib["name"], "started": started})
+    """Start this service's scan now instead of waiting for its interval. It
+    runs in the background and can take minutes; the page shows 'scanning'."""
+    svc = await _service(db, service_id)
+    if not duplicates.config_of(svc)["enabled"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate scanning is off for this service")
+    if not svc["enabled"] or svc["maintenance_mode"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This service is disabled or in maintenance mode")
+    started = duplicates.start(svc)
+    await audit.record(db, user=admin, action="duplicates.scan", target_type="service_instance",
+                       target_id=service_id, detail={"name": svc["name"], "started": started})
     return {"started": started, "scanning": True}
 
 
@@ -90,7 +120,7 @@ async def scan_now(service_id: int, admin: AdminUser, db: aiosqlite.Connection =
 async def delete_duplicate(
     service_id: int, body: DeleteRequest, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
 ):
-    lib = await _library(db, service_id)
+    svc = await _service(db, service_id)
     async with db.execute(
         "SELECT * FROM duplicate_findings WHERE service_instance_id = ? AND key = ?", (service_id, body.key),
     ) as cur:
@@ -105,10 +135,10 @@ async def delete_duplicate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That file isn't part of this duplicate")
 
     try:
-        await library_client.delete_file(lib["base_url"], decrypt_str(lib["api_key_enc"]), body.path)
+        await duplicate_scan.delete_file(svc["duplicate_scan"], body.path)
     except ConnectivityError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not reach the library: {exc}")
-    except ServiceApiError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not reach the file machine: {exc}")
+    except (ServiceApiError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     remaining = [f for f in files if f != body.path]
@@ -117,10 +147,10 @@ async def delete_duplicate(
                          (json.dumps(remaining), service_id, body.key))
     else:
         # One copy left: it's no longer a duplicate. The alert clears (and says
-        # so, for rules that sent it) on the next scan.
+        # so, for rules that sent it) at the service's next check.
         await db.execute("DELETE FROM duplicate_findings WHERE service_instance_id = ? AND key = ?",
                          (service_id, body.key))
     await db.commit()
     await audit.record(db, user=admin, action="duplicate.delete", target_type="service_instance",
-                       target_id=service_id, detail={"library": lib["name"], "title": finding["title"], "path": body.path})
+                       target_id=service_id, detail={"service": svc["name"], "title": finding["title"], "path": body.path})
     return {"deleted": body.path, "remaining": remaining if len(remaining) >= 2 else []}

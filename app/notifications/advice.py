@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_NAMES = {"sonarr": "Sonarr", "radarr": "Radarr", "seerr": "Seerr", "nzbget": "NZBGet", "sabnzbd": "SABnzbd", "library": "The library"}
+APP_NAMES = {"sonarr": "Sonarr", "radarr": "Radarr", "seerr": "Seerr", "nzbget": "NZBGet", "sabnzbd": "SABnzbd"}
 
 # id -> (button label, removes something from the download client)
 ACTIONS: dict[str, tuple[str, bool]] = {
@@ -69,15 +69,15 @@ def diagnose(problem: dict[str, Any]) -> dict[str, Any]:
     key = problem.get("key") or ""
     advice, actions = "", []
 
-    if event == "unreachable" and kind == "library":
-        advice = (f"Cortexarr can't log in to {problem.get('service_name', app)} over SSH. Check the machine is up, "
-                  f"then the user, port, key path and folders under Services — Test connection says which.")
-        actions = ["test_connection"]
-    elif event == "unreachable":
+    if event == "unreachable":
         advice = (f"Cortexarr can't reach {problem.get('service_name', app)}. Check it's running, then check the "
                   f"URL and {'username/password' if kind == 'nzbget' else 'API key'} under Services — a "
                   f"rejected key shows the same way. Test connection says which.")
         actions = ["test_connection"]
+    elif key == "scan:error":
+        advice = (f"{problem.get('service_name', app)}'s duplicate-file scan couldn't finish, so it may be missing "
+                  f"duplicates. Check the SSH login, key file and folders in its Duplicate scan settings "
+                  f"(Settings → Services) — Test there says which.")
     elif event in ("error", "warning"):
         advice = (f"{app}'s own health check is reporting this. {app}'s System → Status page explains each item "
                   f"and links to its fix.")

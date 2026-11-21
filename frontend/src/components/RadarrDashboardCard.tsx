@@ -6,6 +6,7 @@ import ServiceIcon from './ServiceIcon'
 import OpenServiceLink from './OpenServiceLink'
 import RefreshButton, { useRefresh } from './RefreshButton'
 import StatusPill, { type StatusInfo } from './StatusPill'
+import DuplicatePill from './DuplicatePill'
 import { fmtState } from './DownloadingPanel'
 import { getServiceAccent } from '../utils/serviceAccent'
 
@@ -36,6 +37,7 @@ interface DashboardService extends StatusInfo {
   name: string
   type: string
   base_url?: string
+  duplicates?: number
 }
 
 // One nested card per movie that needs attention, in this order.
@@ -179,6 +181,7 @@ export default function RadarrDashboardCard({ service }: { service: DashboardSer
           <span className="flex items-center gap-1.5">
           <RefreshButton onRefresh={refresh} refreshing={refreshing} label={`Refresh ${service.name}`} />
           <OpenServiceLink url={service.base_url} name={service.name} />
+          <DuplicatePill count={service.duplicates} serviceId={service.id} />
           <StatusPill service={service} accent={accent} serviceId={service.id} />
         </span>
         </div>

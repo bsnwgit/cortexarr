@@ -15,6 +15,8 @@ export interface DashboardService extends StatusInfo {
   name: string
   type: string
   base_url?: string
+  // Duplicate files found by this service's scan; the pill only shows when it's above 0.
+  duplicates?: number
 }
 
 // A plain fallback for any service type without its own rich card yet —

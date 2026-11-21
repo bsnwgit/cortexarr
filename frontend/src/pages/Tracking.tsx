@@ -4,7 +4,6 @@ import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import { fmtDateTime } from '../utils/time'
 import PageSpinner from '../components/PageSpinner'
-import DuplicatesPanel from '../components/DuplicatesPanel'
 
 interface Tracked {
   request_id: number
@@ -181,7 +180,6 @@ export default function Tracking() {
 
   return (
     <div>
-      <DuplicatesPanel />
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h2 className="text-lg font-semibold text-slate-100">Request tracking</h2>
         {/* Same dropdown as the other pages' filters (series library, activity). */}

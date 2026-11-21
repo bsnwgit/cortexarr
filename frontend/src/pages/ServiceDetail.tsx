@@ -104,8 +104,6 @@ export default function ServiceDetail() {
 
   // Live TV isn't part of the media pipeline; it has its own page.
   if (service?.type === 'dispatcharr') return <Navigate to="/livetv" replace />
-  // A library has no pages of its own; what it finds shows on the Dashboard.
-  if (service?.type === 'library') return <Navigate to="/" replace />
 
   return (
     <div>
