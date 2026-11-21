@@ -20,6 +20,8 @@ interface Service {
   poll_interval_seconds: number
   retry_count: number
   retry_backoff_seconds: number
+  // A library's SSH login and folders (its "credential"; not secret, so shown).
+  config?: { ssh_user: string; ssh_port: number; key_path: string; movie_paths: string[]; series_paths: string[] }
 }
 
 // Sonarr/Radarr only — the other types have no webhook connection to push
@@ -70,6 +72,19 @@ export default function Services() {
   // a Dispatcharr username can't contain a space, so it can't be mistaken for
   // a login.
   const [authMode, setAuthMode] = useState<'login' | 'key'>('login')
+  // A library is reached over SSH, not an API: a host, a login, a key file on
+  // this machine, and the folders to scan (one per line). The scan lists whole
+  // libraries, so it defaults to every 6 hours.
+  const [lib, setLib] = useState({ ssh_user: '', ssh_port: 22, key_path: '', movie_paths: '', series_paths: '' })
+  const isLibrary = form.type === 'library'
+  const libConfig = {
+    ssh_user: lib.ssh_user.trim(),
+    ssh_port: lib.ssh_port,
+    key_path: lib.key_path.trim(),
+    movie_paths: lib.movie_paths.split('\n').map((l) => l.trim()).filter(Boolean),
+    series_paths: lib.series_paths.split('\n').map((l) => l.trim()).filter(Boolean),
+  }
+  const libReady = !!(libConfig.ssh_user && libConfig.key_path && (libConfig.movie_paths.length || libConfig.series_paths.length))
   const usesLogin = USERPASS_TYPES.has(form.type) && !(form.type === 'dispatcharr' && authMode === 'key')
   const credential = usesLogin
     ? (nzbUser || nzbPass ? `${nzbUser}:${nzbPass}` : '')
@@ -98,7 +113,7 @@ export default function Services() {
       const result = await api.post<{ ok: boolean; message: string }>('/services/test-connection', {
         type: form.type,
         base_url: form.base_url,
-        api_key: credential,
+        ...(isLibrary ? { config: libConfig } : { api_key: credential }),
       })
       setTestResult(result)
     } catch (err) {
@@ -183,11 +198,12 @@ export default function Services() {
     setError('')
     setSaving(true)
     try {
-      await api.post('/services/', { ...form, api_key: credential })
+      await api.post('/services/', isLibrary ? { ...form, api_key: '', config: libConfig } : { ...form, api_key: credential })
       setShowForm(false)
       setForm(EMPTY_FORM)
       setNzbUser('')
       setNzbPass('')
+      setLib({ ssh_user: '', ssh_port: 22, key_path: '', movie_paths: '', series_paths: '' })
       setTestResult(null)
       await load()
     } catch (err) {
@@ -219,18 +235,46 @@ export default function Services() {
               <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
             <Field label="Type">
-              <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              <select
+                className="input"
+                value={form.type}
+                onChange={(e) => {
+                  const type = e.target.value
+                  setForm({ ...form, type, poll_interval_seconds: type === 'library' ? 21600 : form.type === 'library' ? 60 : form.poll_interval_seconds })
+                }}
+              >
                 <option value="sonarr">Sonarr</option>
                 <option value="radarr">Radarr</option>
                 <option value="seerr">Seerr</option>
                 <option value="nzbget">NZBGet</option>
                 <option value="sabnzbd">SABnzbd</option>
                 <option value="dispatcharr">Dispatcharr</option>
+                <option value="library">Library (duplicate-file scan over SSH)</option>
               </select>
             </Field>
-            <Field label="Base URL">
-              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080, dispatcharr: 9191 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+            <Field label={isLibrary ? 'Host (name or address)' : 'Base URL'}>
+              <input className="input" placeholder={isLibrary ? 'nas.example.com' : `http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080, dispatcharr: 9191 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </Field>
+            {isLibrary ? (
+              <>
+                <Field label="SSH user">
+                  <input className="input" autoComplete="off" value={lib.ssh_user} onChange={(e) => setLib({ ...lib, ssh_user: e.target.value })} />
+                </Field>
+                <Field label="SSH port">
+                  <input className="input" type="number" min={1} max={65535} value={lib.ssh_port} onChange={(e) => setLib({ ...lib, ssh_port: Number(e.target.value) })} />
+                </Field>
+                <Field label="SSH key file (path on the Cortexarr host)">
+                  <input className="input" placeholder="/data/ssh/library_key" value={lib.key_path} onChange={(e) => setLib({ ...lib, key_path: e.target.value })} />
+                </Field>
+                <div className="hidden sm:block" />
+                <Field label="Movie folders (one per line)">
+                  <textarea className="input font-mono" rows={3} placeholder="/share/Movies" value={lib.movie_paths} onChange={(e) => setLib({ ...lib, movie_paths: e.target.value })} />
+                </Field>
+                <Field label="Series folders (one per line)">
+                  <textarea className="input font-mono" rows={3} placeholder="/share/Series" value={lib.series_paths} onChange={(e) => setLib({ ...lib, series_paths: e.target.value })} />
+                </Field>
+              </>
+            ) : null}
             {form.type === 'dispatcharr' && (
               <Field label="Sign in with">
                 <select className="input" value={authMode} onChange={(e) => setAuthMode(e.target.value as 'login' | 'key')}>
@@ -239,7 +283,7 @@ export default function Services() {
                 </select>
               </Field>
             )}
-            {usesLogin ? (
+            {isLibrary ? null : usesLogin ? (
               <>
                 <Field label="Username">
                   <input className="input" autoComplete="off" value={nzbUser} onChange={(e) => setNzbUser(e.target.value)} />
@@ -253,7 +297,7 @@ export default function Services() {
                 <input className="input" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
               </Field>
             )}
-            <Field label="Poll interval (seconds)">
+            <Field label={isLibrary ? 'Scan interval (seconds)' : 'Poll interval (seconds)'}>
               <input className="input" type="number" min={10} value={form.poll_interval_seconds} onChange={(e) => setForm({ ...form, poll_interval_seconds: Number(e.target.value) })} />
             </Field>
             <Field label="Retries / backoff (seconds)">
@@ -284,7 +328,7 @@ export default function Services() {
           )}
 
           <div className="flex items-center gap-3">
-            <button onClick={testUnsaved} disabled={testing || !form.base_url || !credential} className="btn-secondary">
+            <button onClick={testUnsaved} disabled={testing || !form.base_url || (isLibrary ? !libReady : !credential)} className="btn-secondary">
               {testing ? 'Testing…' : 'Test connection'}
             </button>
             {testResult && (
@@ -328,15 +372,19 @@ export default function Services() {
                 </div>
                 <div className="text-xs text-slate-500">
                   {s.type} ·{' '}
-                  <a
-                    href={s.base_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="hover:text-slate-300 hover:underline"
-                  >
-                    {s.base_url}
-                  </a>{' '}
+                  {s.type === 'library' ? (
+                    <span>{s.config?.ssh_user}@{s.base_url}</span>
+                  ) : (
+                    <a
+                      href={s.base_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:text-slate-300 hover:underline"
+                    >
+                      {s.base_url}
+                    </a>
+                  )}{' '}
                   · every {s.poll_interval_seconds}s
                   {s.ingestion_mode === 'webhook' && ' · webhooks on'}
                 </div>

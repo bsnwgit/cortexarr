@@ -107,7 +107,8 @@ async def export_config(body: ExportRequest, admin: AdminUser, db: aiosqlite.Con
     name_by_id = {r["id"]: r["name"] for r in service_rows}
     services = [{
         "name": r["name"], "type": r["type"], "base_url": r["base_url"],
-        "api_key": decrypt_str(r["api_key_enc"]) if body.include_credentials and r["api_key_enc"] else "",
+        # A library's "key" is its SSH folders and key *path* — not a secret, so it always goes.
+        "api_key": decrypt_str(r["api_key_enc"]) if (body.include_credentials or r["type"] == "library") and r["api_key_enc"] else "",
         "poll_interval_seconds": r["poll_interval_seconds"], "retry_count": r["retry_count"],
         "retry_backoff_seconds": r["retry_backoff_seconds"], "ingestion_mode": r["ingestion_mode"],
     } for r in service_rows]

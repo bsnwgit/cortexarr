@@ -26,7 +26,8 @@ from app.notifications.advice import ACTIONS, DESTRUCTIVE, diagnose
 router = APIRouter()
 
 Event = Literal["unreachable", "error", "warning", "stuck", "download_failed", "request_issue",
-                "stalled_approval", "stalled_sending", "stalled_searching", "stalled_downloading", "stalled_importing"]
+                "stalled_approval", "stalled_sending", "stalled_searching", "stalled_downloading", "stalled_importing",
+                "duplicate"]
 Channel = Literal["email", "webhook", "ntfy", "sms"]
 
 

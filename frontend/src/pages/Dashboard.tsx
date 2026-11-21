@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import ServiceCard, { type DashboardService } from '../components/ServiceCard'
 import PageSpinner from '../components/PageSpinner'
+import DuplicatesPanel from '../components/DuplicatesPanel'
 
 const FULL_WIDTH_TYPES = new Set(['seerr'])
 // Live TV has its own page; the dashboard is the media pipeline.
-const NOT_IN_PIPELINE = new Set(['dispatcharr'])
+// A library (duplicate-file scanner) isn't a pipeline stage either — it has the Duplicates panel.
+const NOT_IN_PIPELINE = new Set(['dispatcharr', 'library'])
 
 // One card per monitored service — Sonarr's shows fan art from whatever
 // it's currently downloading plus state pills (active/queue/missing), not
@@ -36,6 +38,7 @@ export default function Dashboard() {
 
   return (
     <div>
+      <DuplicatesPanel />
       <h2 className="text-lg font-semibold text-slate-100 mb-4">Pipeline</h2>
 
       {loading ? (

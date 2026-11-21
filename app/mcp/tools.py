@@ -23,6 +23,7 @@ import aiosqlite
 from pydantic import BaseModel, EmailStr, Field
 
 from app.api import alerts as alerts_api
+from app.api import duplicates as duplicates_api
 from app.api import audit as audit_api
 from app.api import tracking as tracking_api
 from app.api import services as svc
@@ -202,6 +203,11 @@ class EpisodeFileArgs(ServiceArg):
 
 class MovieFileArgs(ServiceArg):
     movie_file_id: int
+
+
+class DeleteDuplicateArgs(ServiceArg):
+    key: str = Field(max_length=1000, description="The duplicate's key, from get_duplicates")
+    path: str = Field(max_length=4000, description="One of that duplicate's files, from get_duplicates")
 
 
 class RequestActionArgs(ServiceArg):
@@ -400,6 +406,11 @@ TOOLS: list[Tool] = [
          "Where each Seerr request is: waiting for approval, sending to Sonarr/Radarr, searching, downloading, "
          "importing, or available — with since when, and episode counts for TV.",
          TrackingArgs, lambda db, u, a: tracking_api.request_tracking(u, db, a.active_only)),
+    Tool("get_duplicates",
+         "Duplicate files found by scanning the libraries over SSH: movie folders with more than one video file, "
+         "and episodes (S##E##) held by more than one file — plus files with no S##E## in the name. Each lists its "
+         "files and whether one can be deleted.",
+         NoArgs, lambda db, u, a: duplicates_api.list_duplicates(u, db)),
     Tool("list_alert_rules", "The alert rules: which event, which service, threshold, channels.",
          NoArgs, lambda db, u, a: alerts_api.list_rules(u, db)),
     Tool("get_alert_log", "Alerts sent, newest first, with each channel's result.",
@@ -558,6 +569,10 @@ TOOLS: list[Tool] = [
          lambda db, u, a: users_api.reset_user_password(a.user_id, users_api.ResetPassword(new_password=a.new_password), u, db),
          min_role="admin", kind="write"),
 
+    Tool("scan_library", "Start a duplicate-file scan of a library now (it runs in the background and can take minutes).",
+         ServiceArg, lambda db, u, a: duplicates_api.scan_now(a.service_id, u, db),
+         min_role="admin", kind="write"),
+
     # -- Destructive ------------------------------------------------------------
     Tool("delete_user", "Delete a Cortexarr user. Refused if it would leave no active admin.",
          DeleteUserArgs, lambda db, u, a: users_api.delete_user(a.user_id, u, db),
@@ -578,6 +593,13 @@ TOOLS: list[Tool] = [
          min_role="admin", kind="destructive"),
     Tool("delete_movie_file", "Delete a movie's file from disk (the movie stays, as missing).",
          MovieFileArgs, lambda db, u, a: svc.delete_movie_file_route(a.service_id, a.movie_file_id, u, db),
+         min_role="admin", kind="destructive"),
+    Tool("delete_duplicate_file",
+         "Delete one extra copy of a duplicate movie or episode file from the library machine. Only a file listed "
+         "by get_duplicates, and never the last copy.",
+         DeleteDuplicateArgs,
+         lambda db, u, a: duplicates_api.delete_duplicate(
+             a.service_id, duplicates_api.DeleteRequest(key=a.key, path=a.path), u, db),
          min_role="admin", kind="destructive"),
     Tool("delete_download", "Delete an item from a download client's queue.",
          DownloadItemArgs,

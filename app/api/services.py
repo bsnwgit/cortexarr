@@ -17,13 +17,14 @@ from app.crypto import decrypt_str, encrypt_str
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
 from app.services import (
-    arr_http, dispatcharr_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client,
+    arr_http, dispatcharr_client, library_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client,
+    sonarr_client,
 )
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
 
-_VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "dispatcharr"}
+_VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "dispatcharr", "library"}
 _MASK = "••••••••"
 
 # Extension point for future services (scope: "build Sonarr fully, use it as
@@ -33,7 +34,7 @@ _MASK = "••••••••"
 # than a 500, so e.g. Radarr has no "series" and Sonarr has no "movies".
 _DETAIL_CLIENTS = {
     "sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client, "nzbget": nzbget_client,
-    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client,
+    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client, "library": library_client,
 }
 _IMPLEMENTED_TYPES = set(_DETAIL_CLIENTS)
 
@@ -55,6 +56,9 @@ class ServiceCreate(BaseModel):
     type: str
     base_url: str
     api_key: str = ""
+    # A library's SSH login and folders (app/services/library_client.py) — what
+    # the other types keep as an API key.
+    config: Optional[dict] = None
     poll_interval_seconds: int = Field(default=60, ge=10)
     retry_count: int = Field(default=3, ge=0, le=10)
     retry_backoff_seconds: int = Field(default=5, ge=1)
@@ -65,6 +69,7 @@ class ServiceUpdate(BaseModel):
     name: Optional[str] = None
     base_url: Optional[str] = None
     api_key: Optional[str] = None
+    config: Optional[dict] = None
     enabled: Optional[bool] = None
     maintenance_mode: Optional[bool] = None
     poll_interval_seconds: Optional[int] = Field(default=None, ge=10)
@@ -73,9 +78,26 @@ class ServiceUpdate(BaseModel):
     ingestion_mode: Optional[str] = Field(default=None, pattern="^(poll|webhook)$")
 
 
+def _library_config(config: Optional[dict]) -> str:
+    """A library's config as the JSON stored in place of an API key, or a 400."""
+    try:
+        return json.dumps(library_client.parse_config(config))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 def _serialize(row: aiosqlite.Row) -> dict:
     d = dict(row)
-    d["api_key"] = _MASK if d.pop("api_key_enc", "") else ""
+    enc = d.pop("api_key_enc", "")
+    if d["type"] == "library":
+        # Not a secret (the key is a path, not its contents), so shown as saved.
+        try:
+            d["config"] = json.loads(decrypt_str(enc) or "{}")
+        except (json.JSONDecodeError, ValueError):
+            d["config"] = {}
+        d["api_key"] = ""
+    else:
+        d["api_key"] = _MASK if enc else ""
     d.pop("webhook_token", None)
     d["enabled"] = bool(d["enabled"])
     d["maintenance_mode"] = bool(d["maintenance_mode"])
@@ -125,7 +147,7 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
         )
     # Refuse a definite type mismatch (e.g. a Radarr URL saved as Sonarr).
     # An unreachable service still saves — it may just be down right now.
-    if body.api_key and body.type != "dispatcharr":
+    if body.api_key and body.type not in ("dispatcharr", "library"):
         actual = await arr_http.detect_app(body.base_url, body.api_key)
         if not actual and await seerr_client.looks_like_seerr(body.base_url):
             actual = "Seerr"
@@ -134,7 +156,15 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"That URL is a {actual} instance — set the type to {actual}",
             )
-    api_key_enc = encrypt_str(body.api_key) if body.api_key else ""
+    config = body.config
+    if body.type == "library" and config is None and body.api_key:
+        # A config import carries it as the "api_key" string.
+        try:
+            config = json.loads(body.api_key)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The library settings are not valid")
+    api_key = _library_config(config) if body.type == "library" else body.api_key
+    api_key_enc = encrypt_str(api_key) if api_key else ""
     cur = await db.execute(
         "INSERT INTO service_instances "
         "(name, type, base_url, api_key_enc, poll_interval_seconds, retry_count, retry_backoff_seconds, "
@@ -159,7 +189,14 @@ async def update_service(service_id: int, body: ServiceUpdate, admin: AdminUser,
     fields, params = [], []
     updates = body.model_dump(exclude_none=True)
     for key, value in updates.items():
-        if key == "api_key":
+        if key == "config":
+            if existing["type"] != "library":
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only a library has a config")
+            fields.append("api_key_enc = ?")
+            params.append(encrypt_str(_library_config(value)))
+        elif key == "api_key":
+            if existing["type"] == "library":
+                continue    # a library has no API key; its login is the config
             fields.append("api_key_enc = ?")
             params.append(encrypt_str(value) if value else "")
         elif key in ("enabled", "maintenance_mode"):
@@ -231,6 +268,7 @@ class TestConnectionRequest(BaseModel):
     type: Optional[str] = None
     base_url: Optional[str] = None
     api_key: Optional[str] = None
+    config: Optional[dict] = None
 
 
 def _client_for_type(service_type: Optional[str]):
@@ -246,9 +284,12 @@ def _client_for_type(service_type: Optional[str]):
 @router.post("/test-connection")
 async def test_connection_unsaved(body: TestConnectionRequest, admin: AdminUser):
     client = _client_for_type(body.type)
-    if not body.base_url or not body.api_key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="base_url and api_key are required")
-    ok, message = await client.test_connection(body.base_url, body.api_key)
+    api_key = _library_config(body.config) if body.type == "library" else body.api_key
+    if not body.base_url or not api_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="base_url and config are required" if body.type == "library"
+                            else "base_url and api_key are required")
+    ok, message = await client.test_connection(body.base_url, api_key)
     return {"ok": ok, "message": message}
 
 

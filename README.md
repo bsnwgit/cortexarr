@@ -46,6 +46,11 @@ leaving the page.
   channel's name, number or group; refresh M3U accounts and EPG sources, and
   add, edit or delete them (admins). Signs in with a username and password
   or an API key, your choice per service.
+- **Duplicate files** — a **Library** service looks through your movie and TV
+  folders over SSH (the system `ssh`, no mount needed) and flags a movie folder
+  with more than one video file, and an episode code like `S03E02` held by more
+  than one file. A **Duplicate files** panel on the Dashboard and Tracking, a
+  **Duplicate file** alert event, and (admins) a button to delete the extra copy.
 - **Request tracking** — every Seerr request followed through approval,
   Sonarr/Radarr, searching, downloading and import to available, with how
   long it's been in its stage (and episode counts for TV); alert rules flag
@@ -151,7 +156,8 @@ Native install:
 Docker: just Docker and Compose — the image builds the frontend itself.
 
 Either way: any of Sonarr, Radarr, Seerr, NZBGet, SABnzbd, or Dispatcharr — add only
-what you run.
+what you run. Duplicate-file scans also need the `ssh` client on the Cortexarr host
+(the Docker image includes it).
 
 ## Install
 
