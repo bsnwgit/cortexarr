@@ -44,7 +44,7 @@ from app.services.errors import ConnectivityError, ServiceApiError
 
 __all__ = [
     "ConnectivityError", "ServiceApiError", "KINDS",
-    "parse_config", "scan", "delete_file", "find_duplicates", "episode_codes",
+    "parse_config", "scan", "delete_file", "delete_files", "find_duplicates", "episode_codes", "pick_keep",
 ]
 
 # Which rule a service type's folders follow, and how the service names things.
@@ -77,6 +77,8 @@ class Finding:
     title: str
     reason: str
     files: list[str] = field(default_factory=list)
+    folder: str = ""                                   # the series / movie folder the files are in
+    info: dict[str, dict[str, Any]] = field(default_factory=dict)   # path -> {"size": bytes, "modified": ISO date}
 
     @property
     def deletable(self) -> bool:
@@ -156,7 +158,8 @@ def find_duplicates(kind: str, files_by_root: dict[str, list[str]]) -> list[Find
             for folder, paths in sorted(folders.items()):
                 if len(paths) > 1:
                     out.append(Finding(f"movie:{root}/{folder}", "movie", folder,
-                                       f"{len(paths)} video files in the movie folder", sorted(paths)))
+                                       f"{len(paths)} video files in the movie folder", sorted(paths),
+                                       folder=f"{root}/{folder}"))
             continue
 
         for show, paths in sorted(folders.items()):
@@ -166,13 +169,14 @@ def find_duplicates(kind: str, files_by_root: dict[str, list[str]]) -> list[Find
                 codes = episode_codes(name)
                 if not codes:
                     out.append(Finding(f"series:{root}/{show}:nocode:{name}", "series", f"{show} — {name}",
-                                       "no S##E## episode code in the file name", [path]))
+                                       "no S##E## episode code in the file name", [path],
+                                       folder=f"{root}/{show}"))
                 for code in codes:
                     by_code.setdefault(code, []).append(path)
             for code, dupes in sorted(by_code.items()):
                 if len(dupes) > 1:
                     out.append(Finding(f"series:{root}/{show}:{code}", "series", f"{show} — {code}",
-                                       f"{len(dupes)} files for {code}", dupes))
+                                       f"{len(dupes)} files for {code}", dupes, folder=f"{root}/{show}"))
     return out
 
 
@@ -197,9 +201,9 @@ async def scan(service_type: str, config: str | dict, base_url: str, api_key: st
     gate = asyncio.Semaphore(_CONCURRENCY)
     problems: list[str] = []
 
-    async def one(item: dict) -> tuple[str, list[str]]:
+    async def one(item: dict) -> tuple[str, dict[str, dict[str, Any]]]:
         folder = str(item["path"]).rstrip("/")
-        found: list[str] = []
+        found: dict[str, dict[str, Any]] = {}
         pending, seen = [folder], 0
         async with gate:
             while pending and seen < _MAX_DIRS:
@@ -215,14 +219,16 @@ async def scan(service_type: str, config: str | dict, base_url: str, api_key: st
                 # taking that would walk the whole library once per missing folder. Only what is
                 # inside the folder asked about counts.
                 inside = here.rstrip("/") + "/"
-                found.extend(f["path"] for f in listing.get("files") or []
-                             if f.get("path") and f["path"].startswith(inside))
+                for f in listing.get("files") or []:
+                    if f.get("path") and f["path"].startswith(inside):
+                        found[f["path"]] = {"size": f.get("size"), "modified": f.get("lastModified")}
                 pending.extend(d["path"] for d in listing.get("directories") or []
                                if d.get("path") and d["path"].startswith(inside))
-        return folder, sorted(found)
+        return folder, found
 
     results = await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
     listed: dict[str, list[str]] = {}
+    meta: dict[str, dict[str, Any]] = {}
     for item, res in zip(items, results):
         if isinstance(res, BaseException):
             if isinstance(res, (ConnectivityError, ServiceApiError)):
@@ -231,16 +237,68 @@ async def scan(service_type: str, config: str | dict, base_url: str, api_key: st
             raise res
         folder, files = res
         root = str(PurePosixPath(folder).parent)
-        listed.setdefault(root, []).extend(p for p in files if p.startswith(folder + "/"))
+        listed.setdefault(root, []).extend(sorted(p for p in files if p.startswith(folder + "/")))
+        meta.update(files)
     if items and not listed:
         raise ServiceApiError("; ".join(problems[:3]) or "Nothing could be read")
     if len(problems) > 5:
         problems = problems[:5] + [f"and {len(problems) - 5} more"]
+    findings = find_duplicates(kind, listed)
+    for f in findings:
+        f.info = {p: meta[p] for p in f.files if p in meta}
     return ScanResult(
         files_seen=sum(len(v) for v in listed.values()),
         seconds=round(time.monotonic() - started, 1),
-        findings=find_duplicates(kind, listed), problems=problems,
+        findings=findings, problems=problems,
     )
+
+
+def pick_keep(files: list[str], info: dict[str, dict[str, Any]]) -> str | None:
+    """Which copy to keep: the newest, because a file is usually downloaded
+    again for a reason (a better release, a repair). An empty file is never
+    the one kept, however new. None when any file's size or date is unknown, or
+    all of them are empty — nothing is then decided for the owner, and that
+    group is left alone by "delete all"."""
+    if len(files) < 2:
+        return None
+    for p in files:
+        meta = info.get(p) or {}
+        if not isinstance(meta.get("size"), int) or not meta.get("modified"):
+            return None
+    candidates = [p for p in files if info[p]["size"] > 0]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: (info[p]["modified"], info[p]["size"], p))
+
+
+async def delete_files(
+    service_type: str, base_url: str, api_key: str, paths: list[str],
+) -> tuple[list[str], dict[str, str]]:
+    """Delete several files through the service, reading its series/movie list
+    once. Returns (deleted, {path: why it wasn't}). A file the service has never
+    indexed is skipped, not fatal; an unreachable service raises ConnectivityError."""
+    app, items_path, files_path, id_param = _APPS[service_type]
+    items = await arr_http.get(app, base_url, api_key, items_path, timeout=60.0)
+    indexed_by_owner: dict[Any, list[dict]] = {}
+    deleted: list[str] = []
+    failed: dict[str, str] = {}
+    for path in paths:
+        owner = next((i for i in items if i.get("path") and path.startswith(str(i["path"]).rstrip("/") + "/")), None)
+        if not owner:
+            failed[path] = f"{app} has never indexed this file"
+            continue
+        if owner["id"] not in indexed_by_owner:
+            indexed_by_owner[owner["id"]] = await arr_http.get(app, base_url, api_key, files_path, {id_param: owner["id"]})
+        match = next((f for f in indexed_by_owner[owner["id"]] if f.get("path") == path), None)
+        if not match:
+            failed[path] = f"{app} has never indexed this file"
+            continue
+        try:
+            await arr_http.delete(app, base_url, api_key, f"{files_path}/{match['id']}")
+            deleted.append(path)
+        except ServiceApiError as exc:
+            failed[path] = str(exc)
+    return deleted, failed
 
 
 async def delete_file(service_type: str, base_url: str, api_key: str, path: str) -> None:

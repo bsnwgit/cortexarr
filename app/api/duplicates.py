@@ -31,6 +31,17 @@ from app.services.errors import ConnectivityError, ServiceApiError
 router = APIRouter()
 
 
+class DeleteExtrasRequest(BaseModel):
+    folder: Optional[str] = Field(
+        default=None, max_length=4000,
+        description="Only this series/movie folder's duplicates; leave out for every duplicate of the service")
+    key: Optional[str] = Field(default=None, max_length=1000, description="Only this one duplicate (a finding's key)")
+    keep: list[str] = Field(
+        default_factory=list, max_length=5000,
+        description="Files the user chose to keep. In any duplicate where one is chosen, exactly the chosen files "
+                    "are kept and the rest deleted; the newest-file rule only applies to the others")
+
+
 class DeleteRequest(BaseModel):
     key: str = Field(min_length=1, max_length=1000, description="The finding's key, from GET /api/duplicates")
     path: str = Field(min_length=1, max_length=4000, description="One of that finding's files")
@@ -77,10 +88,15 @@ async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(
         for f in found:
             svc = by_id[f["service_instance_id"]]
             files = json.loads(f["files"] or "[]")
+            details = json.loads(f["details"] or "{}")
+            info = details.get("info") or {}
             findings.append({
                 "service_id": svc["id"], "service_name": svc["name"], "service_type": svc["type"],
                 "key": f["key"], "kind": f["kind"], "title": f["title"], "reason": f["reason"], "files": files,
                 "deletable": len(files) >= 2, "first_seen": f["first_seen"],
+                # Where the files are, what each weighs and when it last changed, and the copy
+                # "delete all extras" would keep (the newest; None when that can't be decided).
+                "folder": details.get("folder") or "", "info": info, "keep": duplicate_scan.pick_keep(files, info),
                 # The series/movie in the service itself, when its folder is a parent of the files.
                 "target_id": duplicates.target_id(files, ids[svc["id"]]),
             })
@@ -103,6 +119,63 @@ async def scan_now(service_id: int, admin: AdminUser, db: aiosqlite.Connection =
     await audit.record(db, user=admin, action="duplicates.scan", target_type="service_instance",
                        target_id=service_id, detail={"name": svc["name"], "started": started})
     return {"started": started, "scanning": True}
+
+
+@router.post("/{service_id}/delete-extras")
+async def delete_extras(
+    service_id: int, body: DeleteExtrasRequest, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete every extra copy in this service's duplicates — or in one folder's,
+    or one duplicate's. Where the user chose files to keep, exactly those are
+    kept; otherwise the newest file of the group is (never an empty one), and a
+    group whose sizes or dates aren't known is left alone. A file any group keeps
+    is never deleted from another (a double episode). Only files the service has
+    indexed can go; the rest are reported back as skipped."""
+    svc = await _service(db, service_id)
+    async with db.execute("SELECT * FROM duplicate_findings WHERE service_instance_id = ?", (service_id,)) as cur:
+        rows = await cur.fetchall()
+    chosen = set(body.keep)
+    groups = []
+    for r in rows:
+        files = json.loads(r["files"] or "[]")
+        details = json.loads(r["details"] or "{}")
+        mine = {p for p in files if p in chosen}           # the user's choice wins over the newest-file rule
+        auto = duplicate_scan.pick_keep(files, details.get("info") or {})
+        groups.append((r, files, details.get("folder") or "", mine or ({auto} if auto else set())))
+    protected = set().union(*(keeps for _, _, _, keeps in groups)) if groups else set()
+    targets: list[str] = []
+    for r, files, folder, keeps in groups:
+        if not keeps or (body.folder is not None and folder != body.folder) or (body.key is not None and r["key"] != body.key):
+            continue
+        targets.extend(p for p in files if p not in protected and p not in targets)
+    if not targets:
+        return {"deleted": 0, "skipped": [], "message": "Nothing to delete"}
+
+    try:
+        deleted, failed = await duplicate_scan.delete_files(
+            svc["type"], svc["base_url"], decrypt_str(svc["api_key_enc"]), targets)
+    except ConnectivityError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not reach {svc['name']}: {exc}")
+    except (ServiceApiError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    gone = set(deleted)
+    for r, files, _, _ in groups:
+        remaining = [p for p in files if p not in gone]
+        if len(remaining) == len(files):
+            continue
+        if len(remaining) >= 2:
+            await db.execute("UPDATE duplicate_findings SET files = ? WHERE service_instance_id = ? AND key = ?",
+                             (json.dumps(remaining), service_id, r["key"]))
+        else:
+            await db.execute("DELETE FROM duplicate_findings WHERE service_instance_id = ? AND key = ?",
+                             (service_id, r["key"]))
+    await db.commit()
+    await audit.record(db, user=admin, action="duplicate.delete_extras", target_type="service_instance",
+                       target_id=service_id, detail={"service": svc["name"], "folder": body.folder,
+                                                     "deleted": len(deleted), "skipped": len(failed)})
+    return {"deleted": len(deleted), "skipped": [{"path": p, "reason": w} for p, w in list(failed.items())[:20]],
+            "skipped_count": len(failed)}
 
 
 @router.post("/{service_id}/delete")

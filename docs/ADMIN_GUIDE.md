@@ -91,6 +91,18 @@ Sonarr/Radarr has indexed it.
   Alerts → Rules*), so duplicates reach your channels, can be snoozed, and
   say when they're resolved.
 
+**Deleting many at once** (admins). Each file shows its size and when it last
+changed. *Delete all duplicates in this folder* (shown when a series folder has
+more than one duplicate) and *Delete all duplicates in <service>* (at the top of
+the page) remove every extra copy. Which copy is kept: the **newest** file of each
+duplicate, because a file is usually downloaded again for a reason — but an empty
+(0-byte) file is never the one kept, and a duplicate whose size or date isn't
+known is left alone. To choose yourself, tick **Keep** on one or more files: in
+any duplicate where you've ticked something, exactly those are kept and the rest
+deleted, whatever the newest rule says (*Delete the others, keep what I ticked*
+does that for one duplicate). Each button asks first, saying how many files and
+how much space. A file one duplicate keeps is never deleted from another.
+
 Delete goes through the service, so it can only remove a file Sonarr/Radarr
 has indexed. A stray file it has never seen is listed but has to be removed
 where it is stored.
