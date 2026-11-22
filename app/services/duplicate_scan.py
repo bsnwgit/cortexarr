@@ -124,7 +124,9 @@ def _counts(rel: PurePosixPath) -> bool:
     """A video that is the movie / the episode itself, not bonus material.
     `rel` is relative to the library folder; parts[0] is the movie or series
     folder itself, so a show called "Other" is not an extras folder."""
-    if not _is_video(rel.name) or _SAMPLE_NAME.search(rel.stem):
+    # A leading dot is a hidden file — notably the "._name.mkv" metadata copies macOS leaves
+    # next to every real file on a network share. They are not the movie or the episode.
+    if rel.name.startswith(".") or not _is_video(rel.name) or _SAMPLE_NAME.search(rel.stem):
         return False
     return not any(part.lower() in _EXTRA_DIRS for part in rel.parts[1:-1])
 
