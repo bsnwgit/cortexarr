@@ -42,11 +42,11 @@ def config_of(service: aiosqlite.Row | dict) -> dict[str, Any]:
     """The service's scan settings, validated — or a disabled stub when it has
     none, is not a Sonarr/Radarr, or the saved JSON no longer validates."""
     if service["type"] not in SCAN_TYPES:
-        return {"enabled": False}
+        return {"enabled": False, "show_hidden_cleanup": False}
     try:
         return duplicate_scan.parse_config(service["duplicate_scan"])
     except (ValueError, KeyError):
-        return {"enabled": False}
+        return {"enabled": False, "show_hidden_cleanup": False}
 
 
 def scanning(service_id: int) -> bool:

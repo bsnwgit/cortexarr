@@ -76,7 +76,8 @@ async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(
         "enabled": bool(r["enabled"]), "scanned_at": r["scanned_at"], "files_seen": r["files_seen"],
         "seconds": r["seconds"], "error": r["error"] or "", "scanning": duplicates.scanning(r["id"]),
         # macOS "._" files the last scan came across — not duplicates, but worth cleaning up.
-        "junk": json.loads(r["junk"] or "{}") or None,
+        # Only when the admin turned the cleanup section on for this service.
+        "junk": (json.loads(r["junk"] or "{}") or None) if duplicates.config_of(r)["show_hidden_cleanup"] else None,
     } for r in rows]
 
     findings: list[dict] = []
