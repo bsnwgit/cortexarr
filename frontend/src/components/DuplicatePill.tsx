@@ -16,7 +16,7 @@ export default function DuplicatePill({ count, serviceId }: { count?: number; se
       type="button"
       onClick={open}
       title="Show the duplicate files"
-      className="text-xs px-2 py-1 rounded-lg border bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25"
+      className="text-xs px-2 py-1 rounded-lg border bg-red-500/20 text-red-300 border-red-500/50 hover:bg-red-500/30 font-medium"
     >
       {count} duplicate{count === 1 ? '' : 's'}
     </button>

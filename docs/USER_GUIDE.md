@@ -44,7 +44,7 @@ the scan has found any, and a **Duplicates** tab appears in the top nav. The
 tab lists every movie folder with more than one video file and every episode
 (by its S##E## code) held by more than one file, with the full path of each,
 the service that found it, and a button that opens that series or movie.
-Admins can **Scan now** and **Delete** the extra copy. A file with no S##E## in
+Each file shows its size and date. Admins can **Scan now**, **Delete** one extra copy, tick **Keep** on the files to keep, or delete all the extras in a folder or a service at once (the newest file is kept unless you ticked others). A file with no S##E## in
 its name is listed too, with a note to rename it.
 
 Every service shows one of:

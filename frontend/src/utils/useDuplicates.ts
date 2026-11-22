@@ -27,6 +27,11 @@ export interface DuplicateFinding {
   first_seen: string
   // The series / movie in the service itself, when it could be matched.
   target_id: number | null
+  // The series / movie folder, what each file weighs and when it last changed, and the copy
+  // "delete all extras" keeps (the newest; null when that can't be decided).
+  folder: string
+  info: Record<string, { size: number | null; modified: string | null }>
+  keep: string | null
 }
 
 export interface DuplicatesData {

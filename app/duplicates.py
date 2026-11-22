@@ -58,11 +58,12 @@ async def _store(db: aiosqlite.Connection, sid: int, result: Optional[duplicate_
     if result is not None:
         for f in result.findings:
             await db.execute(
-                "INSERT INTO duplicate_findings (service_instance_id, key, kind, title, reason, files, first_seen, last_seen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO duplicate_findings (service_instance_id, key, kind, title, reason, files, details, first_seen, last_seen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(service_instance_id, key) DO UPDATE SET title = excluded.title, reason = excluded.reason, "
-                "files = excluded.files, last_seen = excluded.last_seen",
-                (sid, f.key, f.kind, f.title, f.reason, json.dumps(f.files), stamp, stamp),
+                "files = excluded.files, details = excluded.details, last_seen = excluded.last_seen",
+                (sid, f.key, f.kind, f.title, f.reason, json.dumps(f.files),
+                 json.dumps({"folder": f.folder, "info": f.info}), stamp, stamp),
             )
         keep = [f.key for f in result.findings]
         if keep:
