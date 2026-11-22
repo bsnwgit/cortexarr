@@ -1,17 +1,16 @@
 """
-Duplicate-file scan for a Sonarr or Radarr service — finds the real files on
-the machine that holds them, over SSH with the system `ssh` binary (no library,
-no mount).
+Duplicate-file scan for a Sonarr or Radarr service — reads everything from the
+service's own connection, no SSH and no mount.
 
-There is no API to ask: Sonarr, Radarr and Plex only know the files they have
-indexed, so a stray second file can slip past all of them. Listing the real
-folders is the one way to be sure, so this runs `find` on the machine and works
-out the duplicates itself. Which rule applies follows the service: a Radarr
-service's folders are movies, a Sonarr service's are series.
+For every series / movie the service has, its own file browser
+(/api/v3/filesystem, the one behind its folder picker) is walked from that
+folder down, so what is really on disk is what is checked — a stray second
+file that Sonarr/Radarr never indexed still shows up. The paths are the service's own (inside its container, if it runs in one), so
+nothing has to be mapped. Which rule applies follows the service: Radarr's
+folders are movies, Sonarr's are series.
 
 What counts as a duplicate (agreed with the owner, not a guess):
-  - Movies: a movie folder (a direct child of a folder you list) holding more
-    than one video file.
+  - Movies: a movie folder holding more than one video file.
   - Series: the same S##E## code in the name of more than one file under a
     series folder — season folders don't matter, only the code. A file with
     no S##E## in its name is flagged too; it is counted as a problem exactly
@@ -22,34 +21,35 @@ Left out, so they don't read as duplicates: files in extras-type folders
 (Extras, Featurettes, Trailers, ...) and anything named like a sample or a
 trailer. Only video files count — subtitles, .nfo and artwork are ignored.
 
-The service's `duplicate_scan` setting is JSON: enabled, ssh_host, ssh_user,
-ssh_port, key_path (a path on THIS host — the key itself is never read), paths
-(folders on the SSH machine) and interval_minutes.
+The service's `duplicate_scan` setting is JSON: enabled and interval_minutes.
 
-Delete is `rm` over the same SSH login, and only ever for a path the last scan
-reported inside a configured folder (app/api/duplicates.py enforces that).
+Delete goes through the service (DELETE /episodefile/{id} or /moviefile/{id}),
+so it can only remove a file the service has indexed; a stray file it has never
+seen has to be removed where it lives.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import re
-import shlex
 import time
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any
 
-from app.config import get_settings
+from app.services import arr_http
 from app.services.errors import ConnectivityError, ServiceApiError
 
 __all__ = [
     "ConnectivityError", "ServiceApiError", "KINDS",
-    "parse_config", "test_connection", "scan", "delete_file", "find_duplicates", "episode_codes",
+    "parse_config", "scan", "delete_file", "find_duplicates", "episode_codes",
 ]
 
-# Which rule a service type's folders follow.
+# Which rule a service type's folders follow, and how the service names things.
 KINDS = {"sonarr": "series", "radarr": "movie"}
+_APPS = {"sonarr": ("Sonarr", "/api/v3/series", "/api/v3/episodefile", "seriesId"),
+         "radarr": ("Radarr", "/api/v3/movie", "/api/v3/moviefile", "movieId")}
+_MAX_DIRS = 5000          # per series / movie — a runaway folder tree is cut off, not followed forever
 
 VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".mts", ".mpg", ".mpeg", ".flv", ".webm", ".iso",
@@ -62,13 +62,10 @@ _EXTRA_DIRS = {
 _SAMPLE_NAME = re.compile(r"(^|[^a-z])(sample|trailer)([^a-z]|$)", re.IGNORECASE)
 # S03E02, and the multi-episode forms S03E02E03 / S03E02-E03.
 _EPISODE = re.compile(r"[Ss](\d{1,3})[Ee](\d{1,3})((?:[-_ ]?[Ee]\d{1,3})*)")
-_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_USER = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
 
 DEFAULT_INTERVAL_MINUTES = 360
-_SSH_TIMEOUT = 20.0       # connecting / a quick command
-_SCAN_TIMEOUT = 1800.0    # listing one folder tree; a big library is slow over NFS
-_MAX_FILES = 2_000_000    # stop reading a runaway listing rather than fill memory
+_CONCURRENCY = 4          # folders listed at once — each is a read of the disk behind the service
+_LIST_TIMEOUT = 120.0     # a folder listing on a busy NAS can be slow
 
 
 @dataclass
@@ -90,7 +87,7 @@ class ScanResult:
     files_seen: int
     seconds: float
     findings: list[Finding]
-    problems: list[str] = field(default_factory=list)   # folders that couldn't be listed
+    problems: list[str] = field(default_factory=list)   # folders that couldn't be read
 
 
 # ---------------------------------------------------------------------------
@@ -99,109 +96,23 @@ class ScanResult:
 
 def parse_config(raw: str | dict | None) -> dict[str, Any]:
     """Validate a service's duplicate-scan settings. Raises ValueError with a
-    plain message. A scan that is off needs nothing else filled in."""
+    plain message. Settings saved by older versions (a login, key and folder list)
+    are ignored."""
     if isinstance(raw, str):
         try:
             raw = json.loads(raw or "{}")
         except json.JSONDecodeError as exc:
             raise ValueError("The duplicate-scan settings are not valid JSON") from exc
     raw = raw or {}
-    enabled = bool(raw.get("enabled"))
-    cfg: dict[str, Any] = {
-        "enabled": enabled,
-        "ssh_host": str(raw.get("ssh_host") or "").strip(),
-        "ssh_user": str(raw.get("ssh_user") or "").strip(),
-        "ssh_port": 22,
-        "key_path": str(raw.get("key_path") or "").strip(),
-        "paths": _paths(raw.get("paths")),
-        "interval_minutes": DEFAULT_INTERVAL_MINUTES,
-    }
     try:
-        cfg["ssh_port"] = int(raw.get("ssh_port") or 22)
-        cfg["interval_minutes"] = int(raw.get("interval_minutes") or DEFAULT_INTERVAL_MINUTES)
+        interval = int(raw.get("interval_minutes") or DEFAULT_INTERVAL_MINUTES)
     except (TypeError, ValueError):
-        raise ValueError("The SSH port and the scan interval must be numbers") from None
-    if not enabled:
-        return cfg
-    if not _HOST.match(cfg["ssh_host"]):
-        raise ValueError("Enter the host to log in to over SSH — a name or address, no spaces or leading dash")
-    if not _USER.match(cfg["ssh_user"]):
-        raise ValueError("Enter the SSH user")
-    if not 1 <= cfg["ssh_port"] <= 65535:
-        raise ValueError("The SSH port must be 1–65535")
-    if not cfg["key_path"].startswith("/"):
-        raise ValueError("Enter the full path of the SSH key file on the Cortexarr host")
-    if not cfg["paths"]:
-        raise ValueError("Add at least one folder to scan")
-    if cfg["interval_minutes"] < 10:
+        raise ValueError("The scan interval must be a number") from None
+    enabled = bool(raw.get("enabled"))
+    if enabled and interval < 10:
         raise ValueError("Scan at most every 10 minutes")
-    return cfg
+    return {"enabled": enabled, "interval_minutes": interval}
 
-
-def _paths(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        value = value.splitlines()
-    out: list[str] = []
-    for p in value:
-        p = str(p).strip()
-        if not p:
-            continue
-        if not p.startswith("/") or ".." in PurePosixPath(p).parts or "\x00" in p or "\n" in p:
-            raise ValueError(f"The folder '{p}' must be a full path with no '..'")
-        p = p.rstrip("/") or "/"
-        if p == "/":
-            raise ValueError("A folder can't be the root of the disk")
-        if p not in out:
-            out.append(p)
-    return out
-
-
-# ---------------------------------------------------------------------------
-# SSH
-# ---------------------------------------------------------------------------
-
-def _ssh_args(cfg: dict[str, Any]) -> list[str]:
-    known_hosts = f"{get_settings().install_dir}/known_hosts"
-    return [
-        "ssh",
-        "-i", cfg["key_path"], "-p", str(cfg["ssh_port"]),
-        "-o", "BatchMode=yes",                      # never stop to ask for a password
-        "-o", "IdentitiesOnly=yes",                 # only this key, not whatever an agent offers
-        "-o", "StrictHostKeyChecking=accept-new",   # trust on first use, then pin
-        "-o", f"UserKnownHostsFile={known_hosts}",
-        "-o", "ConnectTimeout=10",
-        f"{cfg['ssh_user']}@{cfg['ssh_host']}",
-    ]
-
-
-async def _run(cfg: dict[str, Any], remote: str, timeout: float) -> tuple[int, bytes, str]:
-    """Run one remote command. Returns (exit code, stdout, stderr text)."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *_ssh_args(cfg), remote,
-            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-    except FileNotFoundError as exc:
-        raise ConnectivityError("The ssh program isn't installed on the Cortexarr host") from exc
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        raise ConnectivityError(f"Timed out after {int(timeout)}s") from None
-    return proc.returncode or 0, out, err.decode("utf-8", "replace").strip()
-
-
-def _login_error(code: int, err: str) -> ConnectivityError:
-    # 255 is ssh's own failure (connect, auth, host key); anything else is the remote command's.
-    return ConnectivityError(err.splitlines()[-1] if err else f"ssh exited with {code}")
-
-
-# ---------------------------------------------------------------------------
-# Duplicate rules — pure, so they can be tested without a machine
-# ---------------------------------------------------------------------------
 
 def _is_video(name: str) -> bool:
     return PurePosixPath(name).suffix.lower() in VIDEO_EXTENSIONS
@@ -265,37 +176,56 @@ def find_duplicates(kind: str, files_by_root: dict[str, list[str]]) -> list[Find
 # Scan
 # ---------------------------------------------------------------------------
 
-async def _list(cfg: dict[str, Any], root: str) -> list[str]:
-    code, out, err = await _run(cfg, f"find {shlex.quote(root)} -type f", _SCAN_TIMEOUT)
-    if code == 255:
-        raise _login_error(code, err)
-    paths = [line for line in out.decode("utf-8", "replace").splitlines() if line.startswith(root + "/")]
-    if code != 0 and not paths:
-        raise ServiceApiError(err.splitlines()[-1] if err else f"find exited with {code}")
-    return paths[:_MAX_FILES]
-
-
-async def scan(service_type: str, config: str | dict) -> ScanResult:
-    """List every configured folder and work out the duplicates. A folder that
-    can't be listed is reported in `problems` and skipped — the others still
-    count — except when none could be, which is an error. A login that fails
-    raises ConnectivityError."""
+async def scan(service_type: str, config: str | dict, base_url: str, api_key: str) -> ScanResult:
+    """Ask the service for every series / movie, then for the files of each.
+    A series / movie folder that can't be read is reported in `problems` and skipped — the
+    others still count — except when none could be, which is an error."""
     kind = KINDS.get(service_type)
     if not kind:
         raise ServiceApiError(f"'{service_type}' has no files to scan")
-    cfg = parse_config(config)
-    if not cfg["enabled"]:
+    if not parse_config(config)["enabled"]:
         raise ServiceApiError("The duplicate scan is turned off for this service")
+    app, items_path, files_path, id_param = _APPS[service_type]
     started = time.monotonic()
-    listed: dict[str, list[str]] = {}
+
+    items = await arr_http.get(app, base_url, api_key, items_path, timeout=60.0)
+    items = [i for i in (items if isinstance(items, list) else []) if i.get("path") and i.get("id") is not None]
+    gate = asyncio.Semaphore(_CONCURRENCY)
     problems: list[str] = []
-    for root in cfg["paths"]:
-        try:
-            listed[root] = await _list(cfg, root)
-        except ServiceApiError as exc:
-            problems.append(f"{root}: {exc}")
-    if not listed:
-        raise ServiceApiError("; ".join(problems) or "Nothing to scan")
+
+    async def one(item: dict) -> tuple[str, list[str]]:
+        folder = str(item["path"]).rstrip("/")
+        found: list[str] = []
+        pending, seen = [folder], 0
+        async with gate:
+            while pending and seen < _MAX_DIRS:
+                here = pending.pop()
+                seen += 1
+                listing = await arr_http.get(
+                    app, base_url, api_key, "/api/v3/filesystem",
+                    {"path": here, "includeFiles": "true", "allowFoldersWithoutTrailingSlashes": "true"},
+                    timeout=_LIST_TIMEOUT)
+                if not isinstance(listing, dict):
+                    continue
+                found.extend(f["path"] for f in listing.get("files") or [] if f.get("path"))
+                pending.extend(d["path"] for d in listing.get("directories") or [] if d.get("path"))
+        return folder, sorted(found)
+
+    results = await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
+    listed: dict[str, list[str]] = {}
+    for item, res in zip(items, results):
+        if isinstance(res, BaseException):
+            if isinstance(res, (ConnectivityError, ServiceApiError)):
+                problems.append(f"{item.get('title') or item['path']}: {res}")
+                continue
+            raise res
+        folder, files = res
+        root = str(PurePosixPath(folder).parent)
+        listed.setdefault(root, []).extend(p for p in files if p.startswith(folder + "/"))
+    if items and not listed:
+        raise ServiceApiError("; ".join(problems[:3]) or "Nothing could be read")
+    if len(problems) > 5:
+        problems = problems[:5] + [f"and {len(problems) - 5} more"]
     return ScanResult(
         files_seen=sum(len(v) for v in listed.values()),
         seconds=round(time.monotonic() - started, 1),
@@ -303,36 +233,17 @@ async def scan(service_type: str, config: str | dict) -> ScanResult:
     )
 
 
-async def test_connection(config: str | dict) -> tuple[bool, str]:
-    """Log in and check each folder exists — without listing it."""
-    try:
-        cfg = parse_config({**(json.loads(config) if isinstance(config, str) else config), "enabled": True})
-    except (ValueError, json.JSONDecodeError) as exc:
-        return False, str(exc)
-    checks = " ; ".join(f"[ -d {shlex.quote(p)} ] || echo MISSING {shlex.quote(p)}" for p in cfg["paths"])
-    try:
-        code, out, err = await _run(cfg, f"true ; {checks}", _SSH_TIMEOUT)
-    except ConnectivityError as exc:
-        return False, f"Could not connect: {exc}"
-    if code == 255:
-        return False, f"Could not connect: {_login_error(code, err)}"
-    missing = [line.removeprefix("MISSING ") for line in out.decode("utf-8", "replace").splitlines()
-               if line.startswith("MISSING ")]
-    if missing:
-        return False, "Connected, but these folders don't exist: " + ", ".join(missing)
-    return True, f"Connected — {len(cfg['paths'])} folder(s) found"
-
-
-async def delete_file(config: str | dict, path: str) -> None:
-    """Delete one file. The caller has already checked it is a file the last
-    scan reported; this only refuses what could never be one."""
-    cfg = parse_config(config)
-    if not any(path.startswith(root + "/") for root in cfg["paths"]):
-        raise ServiceApiError("That file is not inside a configured folder")
-    if ".." in PurePosixPath(path).parts or "\n" in path:
-        raise ServiceApiError("Refusing that path")
-    code, _, err = await _run(cfg, f"rm -f -- {shlex.quote(path)}", _SSH_TIMEOUT)
-    if code == 255:
-        raise _login_error(code, err)
-    if code != 0:
-        raise ServiceApiError(err.splitlines()[-1] if err else f"rm exited with {code}")
+async def delete_file(service_type: str, base_url: str, api_key: str, path: str) -> None:
+    """Delete one file through the service. The caller has already checked it
+    is a file the last scan reported. Only a file the service has indexed can
+    be removed this way."""
+    app, items_path, files_path, id_param = _APPS[service_type]
+    items = await arr_http.get(app, base_url, api_key, items_path, timeout=60.0)
+    owner = next((i for i in items if i.get("path") and path.startswith(str(i["path"]).rstrip("/") + "/")), None)
+    if owner:
+        indexed = await arr_http.get(app, base_url, api_key, files_path, {id_param: owner["id"]})
+        match = next((f for f in indexed if f.get("path") == path), None)
+        if match:
+            await arr_http.delete(app, base_url, api_key, f"{files_path}/{match['id']}")
+            return
+    raise ServiceApiError(f"{app} has never indexed this file, so it can't delete it — remove it where the file is stored")

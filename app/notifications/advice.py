@@ -76,8 +76,8 @@ def diagnose(problem: dict[str, Any]) -> dict[str, Any]:
         actions = ["test_connection"]
     elif key == "scan:error":
         advice = (f"{problem.get('service_name', app)}'s duplicate-file scan couldn't finish, so it may be missing "
-                  f"duplicates. Check the SSH login, key file and folders in its Duplicate scan settings "
-                  f"(Settings → Services) — Test there says which.")
+                  f"duplicates. The detail says what it couldn't read — usually the service itself was "
+                  f"unreachable, or a folder it lists is no longer there.")
     elif event in ("error", "warning"):
         advice = (f"{app}'s own health check is reporting this. {app}'s System → Status page explains each item "
                   f"and links to its fix.")

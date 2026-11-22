@@ -43,8 +43,8 @@ login, at `/api/status/` — for embedding in a homelab dashboard.
 
 ## Duplicate-file scans
 
-Each Sonarr and Radarr service can list its real folders over SSH and flag
-duplicates — Radarr applies the movie rule, Sonarr the series rule. It reads the folders themselves because Sonarr, Radarr and Plex
+Each Sonarr and Radarr service can scan its library for
+duplicates — Radarr applies the movie rule, Sonarr the series rule. It reads what is really on disk because Sonarr, Radarr and Plex
 only know the files they have indexed — a stray second file can slip past all
 of them.
 
@@ -68,25 +68,14 @@ files in `Extras`, `Featurettes`, `Trailers`, `Behind The Scenes`,
 folders below a movie or series folder, and files named like a sample or a
 trailer.
 
-**Setting one up** — *Settings → Services →* the Sonarr or Radarr row → **Duplicates**, tick *Look for duplicate files*:
-
-- **Host** — the machine's name or address.
-- **SSH user**, **SSH port**, and **SSH key file** — the path to a private
-  key *on the machine Cortexarr runs on*. Make a key just for Cortexarr and
-  authorise its public half on the machine that holds the files; Cortexarr only needs the
-  path and never reads or stores the key itself. In Docker, put the key under
-  `/data` (for example `/data/ssh/duplicates_key`, readable only by its owner)
-  so it survives updates. The first connection records the machine's host
-  key in `known_hosts` next to `config.yaml`; after that a changed host key
-  is refused.
-- **Movie folders** (Radarr) or **Series folders** (Sonarr) — full paths on
-  that machine, one per line.
-- **Scan interval** — how often to rescan; it starts at 6 hours because a
-  scan lists whole libraries.
-
-The SSH account must be able to run `find` in those folders, and `rm` in them
-if you want **Delete**. **Test connection** checks the login and that each
-folder exists without scanning.
+**Setting one up** — *Settings → Services →* the Sonarr or Radarr row → **Duplicates**,
+tick *Look for duplicate files*, and Save. That's all: Cortexarr asks the service
+for every series or movie it has and walks that folder through the service's own
+file browser, so it needs no SSH login, no folder list and no path mapping, and
+it sees the paths exactly as Sonarr/Radarr do. *Scan every* is how often to
+rescan (default 6 hours, at least 10 minutes); a large library takes minutes
+because every folder is read. Anything on disk is checked, whether or not
+Sonarr/Radarr has indexed it.
 
 **What you get**
 
@@ -101,8 +90,9 @@ folder exists without scanning.
   Alerts → Rules*), so duplicates reach your channels, can be snoozed, and
   say when they're resolved.
 
-Deleting removes the file from that machine only; Sonarr and Radarr
-notice the change on their next rescan.
+Delete goes through the service, so it can only remove a file Sonarr/Radarr
+has indexed. A stray file it has never seen is listed but has to be removed
+where it is stored.
 
 ## Sonarr/Radarr webhooks
 
