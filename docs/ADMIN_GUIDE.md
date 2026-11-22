@@ -61,6 +61,14 @@ of them.
   known to be a copy of anything, so it can't be deleted from Cortexarr —
   rename it.
 
+One movie in pieces is not a duplicate: a disc rip's numbered files (`00052.m2ts`,
+anything inside `BDMV` or `VIDEO_TS`) and files split by a part marker (`cd1`/`cd2`,
+`part1`/`part2`, `disc1`/`disc2`) are ignored. The macOS `._name` metadata files a Mac
+leaves on a network share are ignored too; when a scan finds any, a section at the
+bottom of the Duplicates page says how many and gives a command to run over SSH on the
+machine that holds the files. The command lists every file it would delete first and
+deletes nothing until you type `yes`.
+
 Only video files count (mkv, mp4, m4v, avi, mov, wmv, ts, m2ts, mts, mpg,
 mpeg, flv, webm, iso); subtitles, `.nfo` and artwork are ignored, and so are
 files in `Extras`, `Featurettes`, `Trailers`, `Behind The Scenes`,
