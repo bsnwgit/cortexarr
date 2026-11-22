@@ -173,8 +173,8 @@ class UpdateServiceArgs(ServiceArg):
     retry_backoff_seconds: Optional[int] = Field(default=None, ge=1)
     duplicate_scan: Optional[dict] = Field(
         default=None,
-        description="Sonarr/Radarr only: where to look for duplicate files — enabled, ssh_host, ssh_user, ssh_port, "
-                    "key_path (a path on the Cortexarr host), paths (folders on that machine), interval_minutes")
+        description="Sonarr/Radarr only: scan for duplicate files — enabled, interval_minutes. The scan reads "
+                    "every folder from the service itself")
 
 
 class MonitorSeriesArgs(SeriesArgs):
@@ -411,7 +411,7 @@ TOOLS: list[Tool] = [
          "importing, or available — with since when, and episode counts for TV.",
          TrackingArgs, lambda db, u, a: tracking_api.request_tracking(u, db, a.active_only)),
     Tool("get_duplicates",
-         "Duplicate files found by each Sonarr/Radarr service's scan over SSH: Radarr movie folders with more than "
+         "Duplicate files found by each Sonarr/Radarr service's scan: Radarr movie folders with more than "
          "one video file, and Sonarr episodes (S##E##) held by more than one file — plus files with no S##E## in the "
          "name. Each lists its files and whether one can be deleted.",
          NoArgs, lambda db, u, a: duplicates_api.list_duplicates(u, db)),
@@ -599,8 +599,8 @@ TOOLS: list[Tool] = [
          MovieFileArgs, lambda db, u, a: svc.delete_movie_file_route(a.service_id, a.movie_file_id, u, db),
          min_role="admin", kind="destructive"),
     Tool("delete_duplicate_file",
-         "Delete one extra copy of a duplicate movie or episode file from the machine that holds it. Only a file listed "
-         "by get_duplicates, and never the last copy.",
+         "Delete one extra copy of a duplicate movie or episode file, through the Sonarr/Radarr service (so only a file it has "
+         "indexed). Only a file listed by get_duplicates, and never the last copy.",
          DeleteDuplicateArgs,
          lambda db, u, a: duplicates_api.delete_duplicate(
              a.service_id, duplicates_api.DeleteRequest(key=a.key, path=a.path), u, db),

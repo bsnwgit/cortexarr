@@ -2,7 +2,7 @@
 Duplicate-file scans, per Sonarr/Radarr service: when one is due, running it in
 the background, and keeping what it found.
 
-The scan itself (SSH, the rules) is app/services/duplicate_scan.py. This is the
+The scan itself (the service's own API, the rules) is app/services/duplicate_scan.py. This is the
 glue the poller, the alert engine and /api/duplicates share:
 
   - A service's scan is configured in its `duplicate_scan` JSON and runs on its
@@ -12,7 +12,7 @@ glue the poller, the alert engine and /api/duplicates share:
     memory, so a restart loses nothing and the alert engine and the Duplicates
     page read the same rows.
   - A failed scan keeps the last good findings and records why, rather than
-    clearing real duplicates because an SSH link dropped.
+    clearing real duplicates because the service was briefly unreachable.
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ import asyncio
 import json
 import logging
 import time
-from pathlib import PurePosixPath
 from typing import Any, Optional
 
 import aiosqlite
@@ -101,7 +100,8 @@ async def _run(service: dict) -> None:
     try:
         result, error = None, ""
         try:
-            result = await duplicate_scan.scan(service["type"], service["duplicate_scan"])
+            result = await duplicate_scan.scan(service["type"], service["duplicate_scan"], service["base_url"],
+                                               decrypt_str(service["api_key_enc"]))
         except (ConnectivityError, ServiceApiError, ValueError) as exc:
             error = str(exc)
             log.info("duplicate scan of service %s failed: %s", sid, error)
@@ -185,7 +185,7 @@ _IDS_TTL = 120.0
 
 
 async def folder_ids(service: aiosqlite.Row) -> dict[str, int]:
-    """Folder name -> series/movie id, from the service's own `path` for each.
+    """The service's own `path` for each series/movie -> its id.
     Empty when the service can't be read — the link is then simply left out."""
     sid = service["id"]
     cached = _ids_cache.get(sid)
@@ -196,15 +196,14 @@ async def folder_ids(service: aiosqlite.Row) -> dict[str, int]:
         data = await arr_http.get(app, service["base_url"], decrypt_str(service["api_key_enc"]), path)
     except (ConnectivityError, ServiceApiError):
         return {}
-    ids = {PurePosixPath(r["path"]).name: r["id"] for r in (data if isinstance(data, list) else [])
+    ids = {str(r["path"]).rstrip("/"): r["id"] for r in (data if isinstance(data, list) else [])
            if r.get("path") and r.get("id") is not None}
     _ids_cache[sid] = (time.monotonic(), ids)
     return ids
 
 
-def folder_of(files: list[str], roots: list[str]) -> str:
-    """The movie/series folder a finding's files sit in: the first part below a configured folder."""
-    for root in roots:
-        if files and files[0].startswith(root + "/"):
-            return PurePosixPath(files[0]).relative_to(root).parts[0]
-    return ""
+def target_id(files: list[str], ids: dict[str, int]) -> Optional[int]:
+    """The series/movie a finding's files sit under: the one whose folder is a prefix of the first file."""
+    if not files:
+        return None
+    return next((i for folder, i in ids.items() if files[0].startswith(folder + "/")), None)

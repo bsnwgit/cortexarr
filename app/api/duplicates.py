@@ -3,13 +3,13 @@
 Radarr service's own scan (app/duplicates.py, rules in
 app/services/duplicate_scan.py). The scan runs on the poller and feeds the
 'duplicate' alert event; these routes are the Duplicates page's and the
-Dashboard pills': what the last scans found, scan now, test a scan's settings,
-and delete an extra copy.
+Dashboard pills': what the last scans found, scan now, and delete an extra copy.
 
 Delete is the only thing here that removes anything, so it is admin-only and
 narrow: the file must be one the last scan listed under a finding that still
 has two or more files, so the last copy can never be removed this way, and a
-path can't be made up. A file with no S##E## in its name is never deletable —
+path can't be made up. It goes through the service, so only a file the
+service has indexed can be removed. A file with no S##E## in its name is never deletable —
 it isn't known to be a copy of anything.
 """
 from __future__ import annotations
@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app import audit, duplicates
+from app.crypto import decrypt_str
 from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
 from app.services import duplicate_scan
@@ -33,10 +34,6 @@ router = APIRouter()
 class DeleteRequest(BaseModel):
     key: str = Field(min_length=1, max_length=1000, description="The finding's key, from GET /api/duplicates")
     path: str = Field(min_length=1, max_length=4000, description="One of that finding's files")
-
-
-class TestRequest(BaseModel):
-    duplicate_scan: dict = Field(description="The scan settings to try, as in a service's duplicate_scan")
 
 
 async def _service(db: aiosqlite.Connection, service_id: int) -> aiosqlite.Row:
@@ -80,25 +77,17 @@ async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(
         for f in found:
             svc = by_id[f["service_instance_id"]]
             files = json.loads(f["files"] or "[]")
-            folder = duplicates.folder_of(files, duplicates.config_of(svc)["paths"])
             findings.append({
                 "service_id": svc["id"], "service_name": svc["name"], "service_type": svc["type"],
                 "key": f["key"], "kind": f["kind"], "title": f["title"], "reason": f["reason"], "files": files,
                 "deletable": len(files) >= 2, "first_seen": f["first_seen"],
-                # The series/movie in the service itself, when it can be matched by its folder.
-                "target_id": ids[svc["id"]].get(folder),
+                # The series/movie in the service itself, when its folder is a parent of the files.
+                "target_id": duplicates.target_id(files, ids[svc["id"]]),
             })
     counts: dict[int, int] = {}
     for f in findings:
         counts[f["service_id"]] = counts.get(f["service_id"], 0) + 1
     return {"services": services, "findings": findings, "counts": counts}
-
-
-@router.post("/test")
-async def test_settings(body: TestRequest, admin: AdminUser):
-    """Log in with these (possibly unsaved) settings and check each folder exists, without scanning."""
-    ok, message = await duplicate_scan.test_connection(body.duplicate_scan)
-    return {"ok": ok, "message": message}
 
 
 @router.post("/{service_id}/scan", status_code=status.HTTP_202_ACCEPTED)
@@ -135,9 +124,9 @@ async def delete_duplicate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That file isn't part of this duplicate")
 
     try:
-        await duplicate_scan.delete_file(svc["duplicate_scan"], body.path)
+        await duplicate_scan.delete_file(svc["type"], svc["base_url"], decrypt_str(svc["api_key_enc"]), body.path)
     except ConnectivityError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not reach the file machine: {exc}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not reach {svc['name']}: {exc}")
     except (ServiceApiError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
