@@ -10,7 +10,9 @@ nothing has to be mapped. Which rule applies follows the service: Radarr's
 folders are movies, Sonarr's are series.
 
 What counts as a duplicate (agreed with the owner, not a guess):
-  - Movies: a movie folder holding more than one video file.
+  - Movies: a movie folder holding more than one video file. A movie that aired as a series
+    (The.Stand.2020-S01E05) has one file per episode: different S##E## codes are not
+    duplicates, the same code in two files is.
   - Series: the same S##E## code in the name of more than one file under a
     series folder — season folders don't matter, only the code. A file with
     no S##E## in its name is flagged too; it is counted as a problem exactly
@@ -24,7 +26,8 @@ trailer. Only video files count — subtitles, .nfo and artwork are ignored.
 Left out as one thing in pieces, not copies: a disc rip's numbered files (00052.m2ts, anything in
 BDMV/VIDEO_TS) and files split by a part marker (cd1/cd2, part1/part2, disc1/disc2).
 
-The service's `duplicate_scan` setting is JSON: enabled and interval_minutes.
+The service's `duplicate_scan` setting is JSON: enabled, interval_minutes and
+show_hidden_cleanup (whether the Duplicates page offers the "._" file cleanup command).
 Every Sonarr/Radarr scans by default — a service with nothing saved is on, and
 only an explicit `enabled: false` turns it off.
 
@@ -126,7 +129,10 @@ def parse_config(raw: str | dict | None) -> dict[str, Any]:
     enabled = bool(raw.get("enabled", True))
     if enabled and interval < 10:
         raise ValueError("Scan at most every 10 minutes")
-    return {"enabled": enabled, "interval_minutes": interval}
+    # Off unless the admin asks: the Duplicates page then shows a section for macOS "._" files
+    # with a command that deletes them.
+    return {"enabled": enabled, "interval_minutes": interval,
+            "show_hidden_cleanup": bool(raw.get("show_hidden_cleanup", False))}
 
 
 def _is_video(name: str) -> bool:
@@ -184,10 +190,24 @@ def find_duplicates(kind: str, files_by_root: dict[str, list[str]]) -> list[Find
 
         if kind == "movie":
             for folder, paths in sorted(folders.items()):
-                if len(paths) > 1:
+                # A movie that aired as a series (The.Stand.2020-S01E05) is one file per episode:
+                # different S##E## codes are different parts, the same code twice is a duplicate.
+                by_code: dict[str, list[str]] = {}
+                plain: list[str] = []
+                for path in sorted(paths):
+                    codes = episode_codes(PurePosixPath(path).name)
+                    if not codes:
+                        plain.append(path)
+                    for code in codes:
+                        by_code.setdefault(code, []).append(path)
+                if len(plain) > 1:
                     out.append(Finding(f"movie:{root}/{folder}", "movie", folder,
-                                       f"{len(paths)} video files in the movie folder", sorted(paths),
+                                       f"{len(plain)} video files in the movie folder", plain,
                                        folder=f"{root}/{folder}"))
+                for code, dupes in sorted(by_code.items()):
+                    if len(dupes) > 1:
+                        out.append(Finding(f"movie:{root}/{folder}:{code}", "movie", f"{folder} — {code}",
+                                           f"{len(dupes)} files for {code}", dupes, folder=f"{root}/{folder}"))
             continue
 
         for show, paths in sorted(folders.items()):

@@ -51,7 +51,9 @@ of them.
 **What counts as a duplicate**
 
 - *Movies* — a movie folder (a direct child of a movie folder you list) with
-  more than one video file.
+  more than one video file. A movie that aired as a series (`The.Stand.2020-S01E05`)
+  has one file per episode, so there different `S##E##` codes are not duplicates —
+  the same code in two files is (compared as numbers, so `s1e5` matches `S01E05`).
 - *Series* — the same episode code in the name of more than one file under a
   series folder, e.g. `Yellowjackets - S03E02`. Season folders don't matter,
   only the code, so a copy in a different season folder still counts.
@@ -64,7 +66,8 @@ of them.
 One movie in pieces is not a duplicate: a disc rip's numbered files (`00052.m2ts`,
 anything inside `BDMV` or `VIDEO_TS`) and files split by a part marker (`cd1`/`cd2`,
 `part1`/`part2`, `disc1`/`disc2`) are ignored. The macOS `._name` metadata files a Mac
-leaves on a network share are ignored too; when a scan finds any, a section at the
+leaves on a network share are ignored too; when a scan finds any and *Show the command to delete macOS "._" files* is ticked
+(in the same Duplicates settings, off by default), a section at the
 bottom of the Duplicates page says how many and gives a command to run over SSH on the
 machine that holds the files. The command lists every file it would delete first and
 deletes nothing until you type `yes`.
