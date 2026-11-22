@@ -14,7 +14,7 @@ export interface DuplicateScanConfig {
 export default function DuplicateScanSettings({
   serviceId, type, config, onSaved,
 }: { serviceId: number; type: string; config?: DuplicateScanConfig; onSaved: () => void }) {
-  const [enabled, setEnabled] = useState(!!config?.enabled)
+  const [enabled, setEnabled] = useState(config?.enabled ?? true)
   const [minutes, setMinutes] = useState(config?.interval_minutes ?? 360)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
@@ -40,7 +40,7 @@ export default function DuplicateScanSettings({
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-0.5 accent-violet-500" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         <span className="text-sm text-slate-300">
-          Look for duplicate files
+          Look for duplicate files (on by default)
           <span className="block text-xs text-slate-400">
             Asks this service for every folder in its library and flags {what}. Anything found shows on the
             Dashboard and the Duplicates tab, and can alert.

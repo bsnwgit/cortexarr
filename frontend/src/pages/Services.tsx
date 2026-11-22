@@ -358,7 +358,7 @@ export default function Services() {
                 )}
                 {isAdmin && SCAN_TYPES.has(s.type) && (
                   <button onClick={() => setScanOpen(scanOpen === s.id ? null : s.id)} className="btn-secondary">
-                    Duplicates{s.duplicate_scan?.enabled ? ' ✓' : ''}
+                    Duplicates{s.duplicate_scan?.enabled === false ? ' (off)' : ''}
                   </button>
                 )}
                 <button onClick={() => toggleMaintenance(s)} className="btn-secondary">
