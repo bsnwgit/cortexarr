@@ -12,6 +12,8 @@ export interface ScanningService {
   seconds: number | null
   error: string
   scanning: boolean
+  // macOS "._" files the last scan came across: not duplicates, but worth cleaning up.
+  junk: { count: number; roots: Record<string, number>; samples: string[] } | null
 }
 
 export interface DuplicateFinding {

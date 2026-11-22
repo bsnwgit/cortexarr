@@ -62,7 +62,7 @@ async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(
     """Every scanning service, when it was last scanned, and every duplicate
     found. `counts` is findings per service, for the Dashboard pills."""
     async with db.execute(
-        "SELECT s.*, l.scanned_at, l.files_seen, l.seconds, l.error "
+        "SELECT s.*, l.scanned_at, l.files_seen, l.seconds, l.error, l.junk "
         "FROM service_instances s LEFT JOIN library_scans l ON l.service_instance_id = s.id "
         "WHERE s.type IN ('sonarr', 'radarr') ORDER BY s.name",
     ) as cur:
@@ -75,6 +75,8 @@ async def list_duplicates(user: CurrentUser, db: aiosqlite.Connection = Depends(
         "id": r["id"], "name": r["name"], "type": r["type"], "maintenance_mode": bool(r["maintenance_mode"]),
         "enabled": bool(r["enabled"]), "scanned_at": r["scanned_at"], "files_seen": r["files_seen"],
         "seconds": r["seconds"], "error": r["error"] or "", "scanning": duplicates.scanning(r["id"]),
+        # macOS "._" files the last scan came across — not duplicates, but worth cleaning up.
+        "junk": json.loads(r["junk"] or "{}") or None,
     } for r in rows]
 
     findings: list[dict] = []

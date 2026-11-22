@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import HiddenFilesNotice from '../components/HiddenFilesNotice'
 import PageSpinner from '../components/PageSpinner'
 import ServiceIcon from '../components/ServiceIcon'
 import { SpinnerIcon, TrashIcon } from '../components/icons/UiIcons'
@@ -184,11 +185,14 @@ export default function Duplicates() {
                   Scan now
                 </button>
               )}
-              {isAdmin && extras.length > 0 && (
+              {isAdmin && mine.some((f) => f.deletable) && (
                 <button
                   onClick={() => removeExtras(s.id, null, mine, `across all of ${s.name}`)}
-                  disabled={busy !== ''}
-                  className="rounded-lg border border-red-900 text-red-300 hover:bg-red-950/50 px-2 py-0.5 inline-flex items-center gap-1"
+                  disabled={busy !== '' || extras.length === 0}
+                  title={extras.length === 0
+                    ? 'Nothing can be judged yet — scan again to get sizes and dates, or tick Keep on the files to keep'
+                    : 'Delete every extra copy, keeping the newest of each (or what you ticked)'}
+                  className="rounded-lg border border-red-900 text-red-300 hover:bg-red-950/50 disabled:opacity-50 px-2 py-0.5 inline-flex items-center gap-1"
                 >
                   {busy === `extras:${s.id}:` ? <SpinnerIcon className="w-3 h-3 animate-spin" /> : <TrashIcon className="w-3 h-3" />}
                   Delete all duplicates in {s.name} ({extras.length})
@@ -227,11 +231,14 @@ export default function Duplicates() {
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {isAdmin && g.findings.length > 1 && extras.length > 0 && (
+                    {isAdmin && g.findings.some((f) => f.deletable) && (
                       <button
                         onClick={() => removeExtras(g.serviceId, g.folder, g.findings, `in ${leaf(g.folder)}`)}
-                        disabled={busy !== ''}
-                        className="rounded-lg border border-red-900 text-red-300 hover:bg-red-950/50 px-2 py-1 text-xs inline-flex items-center gap-1"
+                        disabled={busy !== '' || extras.length === 0}
+                        title={extras.length === 0
+                          ? 'Nothing can be judged yet — scan again to get sizes and dates, or tick Keep on the files to keep'
+                          : 'Delete every extra copy in this folder, keeping the newest of each (or what you ticked)'}
+                        className="rounded-lg border border-red-900 text-red-300 hover:bg-red-950/50 disabled:opacity-50 px-2 py-1 text-xs inline-flex items-center gap-1"
                       >
                         {folderBusy ? <SpinnerIcon className="w-3.5 h-3.5 animate-spin" /> : <TrashIcon className="w-3.5 h-3.5" />}
                         Delete all duplicates in this folder ({extras.length})
@@ -316,6 +323,10 @@ export default function Duplicates() {
           })}
         </ul>
       )}
+
+      {data.services.filter((s) => (!filter || s.id === filter) && s.junk?.count).map((s) => (
+        <HiddenFilesNotice key={s.id} serviceName={s.name} junk={s.junk!} />
+      ))}
     </div>
   )
 }

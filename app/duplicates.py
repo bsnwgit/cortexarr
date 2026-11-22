@@ -74,10 +74,10 @@ async def _store(db: aiosqlite.Connection, sid: int, result: Optional[duplicate_
             await db.execute("DELETE FROM duplicate_findings WHERE service_instance_id = ?", (sid,))
         # A folder that couldn't be listed is reported as the error, but what the others found still counts.
         await db.execute(
-            "INSERT INTO library_scans (service_instance_id, scanned_at, files_seen, seconds, error) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO library_scans (service_instance_id, scanned_at, files_seen, seconds, error, junk) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(service_instance_id) DO UPDATE SET scanned_at = excluded.scanned_at, "
-            "files_seen = excluded.files_seen, seconds = excluded.seconds, error = excluded.error",
-            (sid, stamp, result.files_seen, result.seconds, "; ".join(result.problems)),
+            "files_seen = excluded.files_seen, seconds = excluded.seconds, error = excluded.error, junk = excluded.junk",
+            (sid, stamp, result.files_seen, result.seconds, "; ".join(result.problems), json.dumps(result.junk)),
         )
     else:
         await db.execute(

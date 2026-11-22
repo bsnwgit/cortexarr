@@ -21,6 +21,9 @@ Left out, so they don't read as duplicates: files in extras-type folders
 (Extras, Featurettes, Trailers, ...) and anything named like a sample or a
 trailer. Only video files count — subtitles, .nfo and artwork are ignored.
 
+Left out as one thing in pieces, not copies: a disc rip's numbered files (00052.m2ts, anything in
+BDMV/VIDEO_TS) and files split by a part marker (cd1/cd2, part1/part2, disc1/disc2).
+
 The service's `duplicate_scan` setting is JSON: enabled and interval_minutes.
 Every Sonarr/Radarr scans by default — a service with nothing saved is on, and
 only an explicit `enabled: false` turns it off.
@@ -61,6 +64,12 @@ _EXTRA_DIRS = {
     "extras", "extra", "featurettes", "trailers", "behind the scenes", "deleted scenes", "interviews",
     "scenes", "shorts", "other", "sample", "samples",
 }
+# A disc rip's own folders (Blu-ray BDMV/STREAM, DVD VIDEO_TS): one movie in many numbered pieces.
+_DISC_DIRS = {"bdmv", "stream", "clipinf", "playlist", "backup", "auxdata", "video_ts", "audio_ts", "hvdvd_ts"}
+# A piece of a disc rip by name alone: 00052.m2ts, VTS_01_1.vob.
+_PIECE_NAME = re.compile(r"^(\d+|vts_\d+_\d+)$", re.IGNORECASE)
+# "Movie cd1.avi", "Movie - part2.mkv", "Movie.disc1.mkv": a marker at the end of the name.
+_PART_MARK = re.compile(r"[\s._-]+(cd|dvd|disc|disk|part|pt)[\s._-]?\d+$", re.IGNORECASE)
 _SAMPLE_NAME = re.compile(r"(^|[^a-z])(sample|trailer)([^a-z]|$)", re.IGNORECASE)
 # S03E02, and the multi-episode forms S03E02E03 / S03E02-E03.
 _EPISODE = re.compile(r"[Ss](\d{1,3})[Ee](\d{1,3})((?:[-_ ]?[Ee]\d{1,3})*)")
@@ -92,6 +101,8 @@ class ScanResult:
     seconds: float
     findings: list[Finding]
     problems: list[str] = field(default_factory=list)   # folders that couldn't be read
+    # macOS "._name" metadata files seen (never counted as duplicates): {"count", "roots": {folder: n}, "samples": [...]}
+    junk: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +141,23 @@ def _counts(rel: PurePosixPath) -> bool:
     # next to every real file on a network share. They are not the movie or the episode.
     if rel.name.startswith(".") or not _is_video(rel.name) or _SAMPLE_NAME.search(rel.stem):
         return False
+    # A numbered disc piece is part of one movie, never a second copy of it.
+    if _PIECE_NAME.match(rel.stem) or any(part.lower() in _DISC_DIRS for part in rel.parts[1:-1]):
+        return False
     return not any(part.lower() in _EXTRA_DIRS for part in rel.parts[1:-1])
+
+
+def _drop_sequences(paths: list[str]) -> list[str]:
+    """Files split into parts — "Movie cd1.avi" and "Movie cd2.avi" — are one movie
+    in pieces, not copies. Only a real sequence goes: two or more files in one
+    folder that differ just by the part number. A lone "Part 2" title stays."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    for p in paths:
+        pp = PurePosixPath(p)
+        if _PART_MARK.search(pp.stem):
+            groups.setdefault((str(pp.parent), _PART_MARK.sub("", pp.stem).lower()), []).append(p)
+    pieces = {p for g in groups.values() if len(g) >= 2 for p in g}
+    return [p for p in paths if p not in pieces]
 
 
 def episode_codes(name: str) -> list[str]:
@@ -153,6 +180,7 @@ def find_duplicates(kind: str, files_by_root: dict[str, list[str]]) -> list[Find
             if len(rel.parts) < 2 or not _counts(rel):    # a loose file in the root has no folder to be duplicated in
                 continue
             folders.setdefault(rel.parts[0], []).append(path)
+        folders = {name: _drop_sequences(paths) for name, paths in folders.items()}
 
         if kind == "movie":
             for folder, paths in sorted(folders.items()):
@@ -249,8 +277,20 @@ async def scan(service_type: str, config: str | dict, base_url: str, api_key: st
     return ScanResult(
         files_seen=sum(len(v) for v in listed.values()),
         seconds=round(time.monotonic() - started, 1),
-        findings=findings, problems=problems,
+        findings=findings, problems=problems, junk=_hidden_files(listed),
     )
+
+
+def _hidden_files(files_by_root: dict[str, list[str]]) -> dict[str, Any]:
+    """The "._name" files among what was listed: how many, per library folder, and a few examples."""
+    roots: dict[str, int] = {}
+    samples: list[str] = []
+    for root, files in files_by_root.items():
+        n = [p for p in files if PurePosixPath(p).name.startswith("._")]
+        if n:
+            roots[root] = len(n)
+            samples.extend(n[: max(0, 20 - len(samples))])
+    return {"count": sum(roots.values()), "roots": roots, "samples": samples} if roots else {}
 
 
 def pick_keep(files: list[str], info: dict[str, dict[str, Any]]) -> str | None:
