@@ -68,8 +68,9 @@ files in `Extras`, `Featurettes`, `Trailers`, `Behind The Scenes`,
 folders below a movie or series folder, and files named like a sample or a
 trailer.
 
-**Setting one up** — *Settings → Services →* the Sonarr or Radarr row → **Duplicates**,
-tick *Look for duplicate files*, and Save. That's all: Cortexarr asks the service
+**Nothing to set up** — every Sonarr and Radarr service scans on its own, as soon as
+it is added. To turn it off or change how often, use *Settings → Services →* the row →
+**Duplicates**. Cortexarr asks the service
 for every series or movie it has and walks that folder through the service's own
 file browser, so it needs no SSH login, no folder list and no path mapping, and
 it sees the paths exactly as Sonarr/Radarr do. *Scan every* is how often to

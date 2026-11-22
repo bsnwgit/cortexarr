@@ -22,6 +22,8 @@ Left out, so they don't read as duplicates: files in extras-type folders
 trailer. Only video files count — subtitles, .nfo and artwork are ignored.
 
 The service's `duplicate_scan` setting is JSON: enabled and interval_minutes.
+Every Sonarr/Radarr scans by default — a service with nothing saved is on, and
+only an explicit `enabled: false` turns it off.
 
 Delete goes through the service (DELETE /episodefile/{id} or /moviefile/{id}),
 so it can only remove a file the service has indexed; a stray file it has never
@@ -108,7 +110,7 @@ def parse_config(raw: str | dict | None) -> dict[str, Any]:
         interval = int(raw.get("interval_minutes") or DEFAULT_INTERVAL_MINUTES)
     except (TypeError, ValueError):
         raise ValueError("The scan interval must be a number") from None
-    enabled = bool(raw.get("enabled"))
+    enabled = bool(raw.get("enabled", True))
     if enabled and interval < 10:
         raise ValueError("Scan at most every 10 minutes")
     return {"enabled": enabled, "interval_minutes": interval}
@@ -207,8 +209,14 @@ async def scan(service_type: str, config: str | dict, base_url: str, api_key: st
                     timeout=_LIST_TIMEOUT)
                 if not isinstance(listing, dict):
                     continue
-                found.extend(f["path"] for f in listing.get("files") or [] if f.get("path"))
-                pending.extend(d["path"] for d in listing.get("directories") or [] if d.get("path"))
+                # A folder that doesn't exist is answered with its parent's (or the root's) listing —
+                # taking that would walk the whole library once per missing folder. Only what is
+                # inside the folder asked about counts.
+                inside = here.rstrip("/") + "/"
+                found.extend(f["path"] for f in listing.get("files") or []
+                             if f.get("path") and f["path"].startswith(inside))
+                pending.extend(d["path"] for d in listing.get("directories") or []
+                               if d.get("path") and d["path"].startswith(inside))
         return folder, sorted(found)
 
     results = await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
