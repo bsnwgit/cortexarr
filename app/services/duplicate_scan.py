@@ -26,8 +26,9 @@ trailer. Only video files count — subtitles, .nfo and artwork are ignored.
 Left out as one thing in pieces, not copies: a disc rip's numbered files (00052.m2ts, anything in
 BDMV/VIDEO_TS) and files split by a part marker (cd1/cd2, part1/part2, disc1/disc2).
 
-The service's `duplicate_scan` setting is JSON: enabled, interval_minutes and
-show_hidden_cleanup (whether the Duplicates page offers the "._" file cleanup command).
+The service's `duplicate_scan` setting is JSON: enabled, interval_minutes,
+show_hidden_cleanup (whether the Duplicates page offers the "._" file cleanup command)
+and file_access (how Cortexarr may delete unindexed files: app/services/library_files.py).
 Every Sonarr/Radarr scans by default — a service with nothing saved is on, and
 only an explicit `enabled: false` turns it off.
 
@@ -45,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any
 
-from app.services import arr_http
+from app.services import arr_http, library_files
 from app.services.errors import ConnectivityError, ServiceApiError
 
 __all__ = [
@@ -132,7 +133,8 @@ def parse_config(raw: str | dict | None) -> dict[str, Any]:
     # Off unless the admin asks: the Duplicates page then shows a section for macOS "._" files
     # with a command that deletes them.
     return {"enabled": enabled, "interval_minutes": interval,
-            "show_hidden_cleanup": bool(raw.get("show_hidden_cleanup", False))}
+            "show_hidden_cleanup": bool(raw.get("show_hidden_cleanup", False)),
+            "file_access": library_files.parse_access(raw.get("file_access"))}
 
 
 def _is_video(name: str) -> bool:

@@ -20,6 +20,11 @@ RUN npm run build
 FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.source="https://github.com/bsnwgit/cortexarr"
 
+# The ssh program — only used when a service's file access is set to SSH
+# (deleting files Radarr hasn't indexed; see docs/ADMIN_GUIDE.md).
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system cortexarr && useradd --system --gid cortexarr --home /data cortexarr
 
 WORKDIR /app

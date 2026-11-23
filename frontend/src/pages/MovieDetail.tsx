@@ -20,6 +20,21 @@ interface MovieFile {
   edition: string
 }
 
+interface FolderEntry {
+  path: string
+  is_dir: boolean
+  size: number | null
+  modified: string | null
+  file_id: number | null
+}
+
+interface FolderListing {
+  path: string
+  entries: FolderEntry[]
+  truncated: boolean
+  can_delete: boolean
+}
+
 interface MovieDetailData {
   id: number
   title: string
@@ -86,7 +101,9 @@ export default function MovieDetail() {
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [deleteMovieOpen, setDeleteMovieOpen] = useState(false)
-  const [deleteFileOpen, setDeleteFileOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number | null; path: string; isDir: boolean } | null>(null)
+  const [folder, setFolder] = useState<FolderListing | null>(null)
+  const [folderError, setFolderError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [seerrMatches, setSeerrMatches] = useState<SeerrMatch[]>([])
   const [removeSeerr, setRemoveSeerr] = useState(false)
@@ -111,6 +128,21 @@ export default function MovieDetail() {
 
   useEffect(() => {
     loadMovie()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, movieId])
+
+  async function loadFolder() {
+    if (!id || !movieId) return
+    try {
+      setFolder(await api.get<FolderListing>(`/services/${id}/movies/${movieId}/folder`))
+      setFolderError('')
+    } catch (err) {
+      setFolderError(err instanceof ApiError ? err.message : 'Failed to list the folder')
+    }
+  }
+
+  useEffect(() => {
+    loadFolder()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, movieId])
 
@@ -186,13 +218,16 @@ export default function MovieDetail() {
   }
 
   async function confirmDeleteFile() {
-    if (!movie?.movie_file) return
+    if (!deleteTarget) return
     setDeleteBusy(true)
     try {
-      await api.delete(`/services/${id}/moviefiles/${movie.movie_file.id}`)
-      setDeleteFileOpen(false)
-      await loadMovie()
+      if (deleteTarget.id != null) await api.delete(`/services/${id}/moviefiles/${deleteTarget.id}`)
+      else await api.delete(`/services/${id}/movies/${movieId}/folder?path=${encodeURIComponent(deleteTarget.path)}`)
+      setDeleteTarget(null)
+      await Promise.all([loadMovie(), loadFolder()])
     } catch (err) {
+      // Close the dialog so the error above the page can be seen.
+      setDeleteTarget(null)
       setActionError(err instanceof ApiError ? err.message : 'Failed to delete')
     } finally {
       setDeleteBusy(false)
@@ -349,7 +384,7 @@ export default function MovieDetail() {
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs text-slate-400">Added {fmtDay(movie.movie_file.date_added)}</span>
                     <button
-                      onClick={() => setDeleteFileOpen(true)}
+                      onClick={() => setDeleteTarget({ id: movie.movie_file!.id, path: movie.movie_file!.relative_path, isDir: false })}
                       title="Delete movie file"
                       className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-red-300 hover:border-red-900 hover:bg-red-950/30 transition-colors"
                     >
@@ -368,6 +403,57 @@ export default function MovieDetail() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Everything on disk under the movie's folder — Radarr only tracks one
+              file, so extra copies, stray files and sub-folders show up here. */}
+          <div className="bg-slate-925 border border-slate-800 rounded-xl p-4 mt-4">
+            <div className="flex items-center justify-between mb-3 gap-3">
+              <h3 className="text-sm font-medium text-slate-100">Folder contents</h3>
+              {folder?.path && <span className="text-xs text-slate-400 break-all text-right">{folder.path}</span>}
+            </div>
+            {folderError ? (
+              <p className="text-red-300 text-xs">{folderError}</p>
+            ) : !folder ? (
+              <PageSpinner className="py-3" />
+            ) : folder.entries.length === 0 ? (
+              <p className="text-sm text-slate-400">Nothing in this folder.</p>
+            ) : (
+              <ul className="divide-y divide-slate-800 text-sm">
+                {folder.entries.map((e) => {
+                  const parts = e.path.split('/')
+                  return (
+                    <li key={e.path} className="flex items-center gap-3 py-1.5">
+                      <span
+                        className={clsx('min-w-0 flex-1 break-all', e.is_dir ? 'text-slate-400' : 'text-slate-100')}
+                        style={{ paddingLeft: `${(parts.length - 1) * 1.25}rem` }}
+                      >
+                        {parts[parts.length - 1]}{e.is_dir ? '/' : ''}
+                      </span>
+                      {!e.is_dir && e.file_id != null && <span className="metadata-pill text-xs">In Radarr</span>}
+                      {!e.is_dir && e.file_id == null && <span className="metadata-pill text-xs text-amber-300">Not in Radarr</span>}
+                      <span className="text-xs text-slate-400 w-20 text-right shrink-0">
+                        {e.size != null && !e.is_dir ? fmtBytes(e.size) : ''}
+                      </span>
+                      {e.file_id != null || folder.can_delete ? (
+                        <button
+                          onClick={() => setDeleteTarget({ id: e.file_id, path: e.path, isDir: e.is_dir })}
+                          title={e.is_dir ? 'Delete this folder and everything in it' : 'Delete this file'}
+                          className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-red-300 hover:border-red-900 hover:bg-red-950/30 transition-colors"
+                        >
+                          <TrashIcon className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <span className="w-[30px] shrink-0" />
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {folder?.truncated && (
+              <p className="text-xs text-slate-400 mt-2">The folder tree is large — only part of it is listed.</p>
+            )}
           </div>
         </>
       ) : null}
@@ -411,14 +497,40 @@ export default function MovieDetail() {
         </ConfirmDeleteModal>
       )}
 
-      {deleteFileOpen && movie?.movie_file && (
+      {deleteTarget && (
         <ConfirmDeleteModal
-          title="Delete movie file"
-          warning={`This deletes "${movie.movie_file.relative_path}" from disk via Radarr.`}
+          title={deleteTarget.isDir ? 'Delete folder' : 'Delete file'}
+          warning={
+            deleteTarget.isDir
+              ? `This permanently deletes the folder "${deleteTarget.path}" and everything inside it from disk.`
+              : `This permanently deletes "${deleteTarget.path}" from disk.`
+          }
           busy={deleteBusy}
           onConfirm={confirmDeleteFile}
-          onCancel={() => setDeleteFileOpen(false)}
-        />
+          onCancel={() => setDeleteTarget(null)}
+        >
+          <div className="text-xs text-slate-300 space-y-1">
+            {folder?.path && <p className="break-all text-slate-400">In {folder.path}</p>}
+            {deleteTarget.isDir &&
+              (() => {
+                const inside = (folder?.entries ?? []).filter((e) => e.path.startsWith(`${deleteTarget.path}/`))
+                const files = inside.filter((e) => !e.is_dir)
+                return (
+                  <>
+                    <p>
+                      {files.length} {files.length === 1 ? 'file' : 'files'}
+                      {files.length > 0 && ` (${fmtBytes(files.reduce((n, e) => n + (e.size ?? 0), 0))})`} will go with it:
+                    </p>
+                    <ul className="max-h-32 overflow-y-auto break-all text-slate-400">
+                      {files.slice(0, 50).map((e) => <li key={e.path}>{e.path.slice(deleteTarget.path.length + 1)}</li>)}
+                      {files.length > 50 && <li>…and {files.length - 50} more</li>}
+                    </ul>
+                  </>
+                )
+              })()}
+            {deleteTarget.id != null && <p className="text-amber-300">Radarr tracks this file, so it will show as missing afterwards.</p>}
+          </div>
+        </ConfirmDeleteModal>
       )}
     </div>
   )

@@ -33,7 +33,7 @@ __all__ = [
     "ConnectivityError", "ServiceApiError", "HealthResult",
     "test_connection", "check_health",
     "get_queue", "get_wanted_missing", "get_calendar", "get_movies", "get_history",
-    "get_movie_detail", "get_movie_history",
+    "get_movie_detail", "get_movie_folder", "get_movie_history",
     "set_movie_monitored", "search_movie", "delete_movie_file", "delete_movie",
     "remove_queue_item", "import_queue_item", "get_movies_progress",
     "get_stats",
@@ -244,6 +244,50 @@ async def get_movie_detail(base_url: str, api_key: str, movie_id: int) -> dict[s
         } if movie_file else None,
     })
     return detail
+
+
+_MAX_FOLDER_DIRS = 500   # a runaway tree is cut off, not followed forever
+
+
+async def get_movie_folder(base_url: str, api_key: str, movie_id: int) -> dict[str, Any]:
+    """Everything on disk under the movie's folder, walked through Radarr's own
+    file browser (/api/v3/filesystem) — so stray files, extra copies and
+    sub-folders Radarr never indexed show up, not just the one file it tracks.
+    Each entry says whether Radarr has it indexed (`file_id`); only those can be
+    deleted through Radarr."""
+    m = await _get(base_url, api_key, f"/api/v3/movie/{movie_id}")
+    root = str(m.get("path") or "").rstrip("/")
+    if not root:
+        return {"path": "", "entries": [], "truncated": False}
+    indexed = await _get(base_url, api_key, "/api/v3/moviefile", params={"movieId": movie_id})
+    by_path = {f["path"]: f["id"] for f in (indexed if isinstance(indexed, list) else []) if f.get("path")}
+
+    entries: list[dict[str, Any]] = []
+    pending, seen = [root], 0
+    while pending and seen < _MAX_FOLDER_DIRS:
+        here = pending.pop()
+        seen += 1
+        listing = await arr_http.get(
+            _APP, base_url, api_key, "/api/v3/filesystem",
+            {"path": here, "includeFiles": "true", "allowFoldersWithoutTrailingSlashes": "true"},
+            timeout=60.0,
+        )
+        if not isinstance(listing, dict):
+            continue
+        # A folder that doesn't exist is answered with its parent's listing — only
+        # what is inside the folder asked about counts.
+        inside = here + "/"
+        for d in listing.get("directories") or []:
+            if d.get("path") and d["path"].startswith(inside):
+                entries.append({"path": d["path"][len(root) + 1:], "is_dir": True, "size": None,
+                                "modified": d.get("lastModified"), "file_id": None})
+                pending.append(d["path"])
+        for f in listing.get("files") or []:
+            if f.get("path") and f["path"].startswith(inside):
+                entries.append({"path": f["path"][len(root) + 1:], "is_dir": False, "size": f.get("size"),
+                                "modified": f.get("lastModified"), "file_id": by_path.get(f["path"])})
+    entries.sort(key=lambda e: e["path"].lower())
+    return {"path": root, "entries": entries, "truncated": bool(pending)}
 
 
 def _history_row(r: dict[str, Any]) -> dict[str, Any]:
