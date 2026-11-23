@@ -47,6 +47,11 @@ the service that found it, and a button that opens that series or movie.
 Each file shows its size and date. Admins can **Scan now**, **Delete** one extra copy, tick **Keep** on the files to keep, or delete all the extras in a folder or a service at once (the newest file is kept unless you ticked others). A file with no S##E## in
 its name is listed too, with a note to rename it.
 
+A Radarr movie page also has a **Folder contents** list: every file and folder on disk under
+that movie, each marked *In Radarr* or *Not in Radarr*. Admins can delete from it (typing
+`Delete` to confirm); files Radarr doesn't track can be deleted only when your admin has set up
+file access for the service.
+
 Every service shows one of:
 
 - **Healthy** — reachable, no issues reported.

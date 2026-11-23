@@ -72,6 +72,28 @@ bottom of the Duplicates page says how many and gives a command to run over SSH 
 machine that holds the files. The command lists every file it would delete first and
 deletes nothing until you type `yes`.
 
+### Deleting files Radarr hasn't indexed
+
+A movie page lists everything in the movie's folder (**Folder contents**). Radarr can only
+delete the one file it tracks, so for anything else — an extra copy, a sample, a sub-folder —
+Cortexarr needs its own way to the disk. Set it per Radarr service in Settings → Services,
+under the service's duplicate settings, as *Deleting files Radarr hasn't indexed*:
+
+- **Mount** — the library is mounted into the host Cortexarr runs on (for Docker, add the
+  library as a volume, read-write). Give the library folder as Radarr sees it (for example
+  `/movies`) and as Cortexarr sees it (for example `/library/movies`). A symlink inside a
+  movie folder can't lead a delete outside it.
+- **SSH** — Cortexarr runs `rm` on the machine that holds the files. Give the host, port,
+  user, the **path to a private key file** on the Cortexarr host (mount the file in; the key
+  is never stored in Cortexarr), the library folder as the SSH machine sees it, and the host
+  key line from `ssh-keyscan -t ed25519 <host>`. Cortexarr only connects to a machine that
+  presents that key. The Docker image includes the `ssh` program; a native install needs
+  `openssh-client`.
+
+Either way only a path Radarr's own listing reports under that movie's folder can be
+deleted, an admin must type `Delete` in the confirmation, nothing goes to a recycle bin, and
+each delete is written to the audit log (`movie.delete_path`).
+
 Only video files count (mkv, mp4, m4v, avi, mov, wmv, ts, m2ts, mts, mpg,
 mpeg, flv, webm, iso); subtitles, `.nfo` and artwork are ignored, and so are
 files in `Extras`, `Featurettes`, `Trailers`, `Behind The Scenes`,

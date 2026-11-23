@@ -18,7 +18,7 @@ from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
 from app import duplicates
 from app.services import (
-    arr_http, dispatcharr_client, duplicate_scan, nzbget_client, radarr_client, sabnzbd_client, seerr_client,
+    arr_http, dispatcharr_client, duplicate_scan, library_files, nzbget_client, radarr_client, sabnzbd_client, seerr_client,
     sonarr_client,
 )
 from app.services.errors import ConnectivityError, ServiceApiError
@@ -706,6 +706,56 @@ async def movie_detail(
         return await fn(row["base_url"], api_key, movie_id)
     except (ConnectivityError, ServiceApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get("/{service_id}/movies/{movie_id}/folder")
+async def movie_folder(
+    service_id: int, movie_id: int, user: CurrentUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The movie page's folder listing — every file and sub-folder on disk
+    under the movie's folder, with which ones Radarr has indexed."""
+    row, client = await _get_service_and_client(service_id, db)
+    fn = _client_fn(row, client, "get_movie_folder")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        listing = await fn(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    # Whether the trash can may offer to delete files Radarr hasn't indexed.
+    listing["can_delete"] = duplicates.config_of(row).get("file_access", {}).get("method", "none") != "none"
+    return listing
+
+
+@router.delete("/{service_id}/movies/{movie_id}/folder")
+async def delete_movie_folder_entry(
+    service_id: int, movie_id: int, path: str, admin: AdminUser, db: aiosqlite.Connection = Depends(get_db),
+):
+    """The folder-contents trash can for a file or folder Radarr hasn't indexed.
+    `path` is relative to the movie's folder and must be one Radarr's own
+    listing of that folder reports; the delete itself is mount or SSH, per the
+    service's file-access settings (app/services/library_files.py)."""
+    row, client = await _get_service_and_client(service_id, db)
+    access = duplicates.config_of(row).get("file_access") or {"method": "none"}
+    if access.get("method", "none") == "none":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="File access isn't set up for this service — add it in Settings → Services")
+    api_key = decrypt_str(row["api_key_enc"])
+    try:
+        listing = await _client_fn(row, client, "get_movie_folder")(row["base_url"], api_key, movie_id)
+        if not listing["path"] or path not in {e["path"] for e in listing["entries"]}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="That isn't in the movie's folder any more")
+        await library_files.delete_entry(access, listing["path"], path)
+    except (ConnectivityError, ServiceApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except library_files.LibraryFilesError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await audit.record(db, user=admin, action="movie.delete_path", target_type="service_instance",
+                        target_id=service_id, detail={"movie_id": movie_id, "path": path, "method": access["method"]})
+    try:    # So Radarr notices when the file it tracked went with the folder.
+        await _client_fn(row, client, "rescan_movie")(row["base_url"], api_key, movie_id)
+    except (ConnectivityError, ServiceApiError):
+        pass
+    return {"ok": True}
 
 
 @router.patch("/{service_id}/movies/{movie_id}/monitored")
