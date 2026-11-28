@@ -31,7 +31,9 @@ from app.crypto import decrypt_str
 from app.database import DB_PATH
 from app.notifications import engine as alerts
 from app import duplicates
-from app.services import dispatcharr_client, nzbget_client, radarr_client, sabnzbd_client, seerr_client, sonarr_client
+from app.services import (
+    dispatcharr_client, nzbget_client, radarr_client, reelhound_client, sabnzbd_client, seerr_client, sonarr_client,
+)
 from app.services.errors import ConnectivityError
 
 log = logging.getLogger("cortexarr.poller")
@@ -40,7 +42,7 @@ log = logging.getLogger("cortexarr.poller")
 # instances of these.
 _HEALTH_CLIENTS = {
     "sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client, "nzbget": nzbget_client,
-    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client,
+    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client, "reelhound": reelhound_client,
 }
 
 _TICK_SECONDS = 5

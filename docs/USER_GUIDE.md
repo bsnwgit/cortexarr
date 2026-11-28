@@ -261,9 +261,18 @@ estimated time), free disk space, anything post-processing, and **Pause all
 
 ![Download history](images/downloads-history.png)
 
+### ReelHound
+
+The **ReelHound** tab, at the right of the tab row, shows only while a
+ReelHound service is enabled. It shows how many
+indexing jobs are waiting, running, done and failed, why indexing is paused if
+it is, and each worker's last request for work and any heat problem. A worker
+asks only between jobs, so that time grows during a long job. It is read-only.
+
 ## Live TV (Dispatcharr)
 
-The **Live TV** tab controls a Dispatcharr instance; it's separate from the
+The **Live TV** tab, at the right of the tab row, shows only while a
+Dispatcharr service is enabled. It controls a Dispatcharr instance; it's separate from the
 media pipeline. If more than one is set up, pick one at the top. A strip
 shows who is watching now, channel count, M3U accounts and EPG sources (with
 how many are failing). Connection details are in Settings → Services.

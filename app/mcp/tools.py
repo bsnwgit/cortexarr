@@ -91,7 +91,7 @@ class ServiceArg(BaseModel):
 
 
 class ServiceFilter(BaseModel):
-    type: Optional[Literal["sonarr", "radarr", "seerr", "nzbget", "sabnzbd"]] = None
+    type: Optional[Literal["sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "reelhound"]] = None
     q: Optional[str] = Field(default=None, max_length=100, description="Name contains")
 
 
@@ -104,7 +104,8 @@ class ViewArgs(ServiceArg):
         description=(
             "queue (Sonarr/Radarr/NZBGet/SABnzbd), wanted = missing (Sonarr/Radarr), "
             "series (Sonarr library), movies (Radarr library), history (all types), "
-            "requests and issues (Seerr), overview (NZBGet/SABnzbd speed, disk, paused)"
+            "requests and issues (Seerr), overview (NZBGet/SABnzbd speed, disk, paused; "
+            "ReelHound indexing jobs, pause reason and worker health)"
         ),
     )
 
@@ -150,9 +151,9 @@ class LimitArgs(BaseModel):
 
 
 class NewServiceTest(BaseModel):
-    type: Literal["sonarr", "radarr", "seerr", "nzbget", "sabnzbd"]
+    type: Literal["sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "reelhound"]
     base_url: str = Field(max_length=500)
-    api_key: str = Field(max_length=500, description="API key; for NZBGet, username:password")
+    api_key: str = Field(max_length=500, description="API key; for NZBGet, username:password; for ReelHound, its monitoring key")
 
 
 class AddServiceArgs(NewServiceTest):
@@ -371,7 +372,7 @@ TOOLS: list[Tool] = [
     # -- Service pages (live views) ------------------------------------------
     Tool("get_service_view",
          "A live view from one service, as on its page: its download queue, missing items, library, history, "
-         "Seerr requests/issues, or a download client's overview.",
+         "Seerr requests/issues, a download client's overview, or ReelHound's indexing status.",
          ViewArgs, lambda db, u, a: svc.service_detail(a.service_id, a.view, u, db)),
     Tool("get_calendar", "Sonarr/Radarr calendar entries between two dates.",
          RangeArgs, lambda db, u, a: svc.service_calendar(a.service_id, a.start, a.end, u, db)),

@@ -15,6 +15,7 @@ import SeerrIssues from '../components/SeerrIssues'
 import DownloadOverview from '../components/DownloadOverview'
 import DownloadQueue from '../components/DownloadQueue'
 import DownloadHistory from '../components/DownloadHistory'
+import ReelhoundStatus from '../components/ReelhoundStatus'
 import { getServiceAccent } from '../utils/serviceAccent'
 import PageSpinner from '../components/PageSpinner'
 
@@ -52,6 +53,7 @@ const TABS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
   ],
   nzbget: DOWNLOAD_CLIENT_TABS,
   sabnzbd: DOWNLOAD_CLIENT_TABS,
+  reelhound: [{ key: 'indexing', label: 'Indexing' }],
 }
 
 // Download clients (NZBGet, SABnzbd) share one set of views, fed by clients
@@ -196,6 +198,8 @@ export default function ServiceDetail() {
         <DownloadQueue serviceId={id ?? ''} serviceType={service.type} accent={accent} />
       ) : tab === 'history' ? (
         <DownloadHistory serviceId={id ?? ''} accent={accent} />
+      ) : tab === 'indexing' ? (
+        <ReelhoundStatus serviceId={id ?? ''} />
       ) : null}
       </Fragment>
     </div>

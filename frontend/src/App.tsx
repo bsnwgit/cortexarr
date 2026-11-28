@@ -16,6 +16,7 @@ import ApiTokens from './pages/ApiTokens'
 import Tracking from './pages/Tracking'
 import Duplicates from './pages/Duplicates'
 import LiveTV from './pages/LiveTV'
+import ReelHound from './pages/ReelHound'
 import History from './pages/History'
 import Status from './pages/Status'
 import Notifications from './pages/Notifications'
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="duplicates" element={<Duplicates />} />
         <Route path="tracking" element={<Tracking />} />
         <Route path="livetv" element={<LiveTV />} />
+        <Route path="reelhound" element={<ReelHound />} />
         <Route path="history" element={<History />} />
         <Route path="status" element={<Status />} />
         {/* Alerts, the activity feed, and the audit log — one top-nav

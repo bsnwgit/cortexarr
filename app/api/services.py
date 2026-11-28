@@ -18,14 +18,14 @@ from app.database import get_db
 from app.dependencies import AdminUser, CurrentUser
 from app import duplicates
 from app.services import (
-    arr_http, dispatcharr_client, duplicate_scan, library_files, nzbget_client, radarr_client, sabnzbd_client, seerr_client,
-    sonarr_client,
+    arr_http, dispatcharr_client, duplicate_scan, library_files, nzbget_client, radarr_client, reelhound_client,
+    sabnzbd_client, seerr_client, sonarr_client,
 )
 from app.services.errors import ConnectivityError, ServiceApiError
 
 router = APIRouter()
 
-_VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "dispatcharr"}
+_VALID_TYPES = {"sonarr", "radarr", "seerr", "nzbget", "sabnzbd", "dispatcharr", "reelhound"}
 _MASK = "••••••••"
 
 # Extension point for future services (scope: "build Sonarr fully, use it as
@@ -35,7 +35,7 @@ _MASK = "••••••••"
 # than a 500, so e.g. Radarr has no "series" and Sonarr has no "movies".
 _DETAIL_CLIENTS = {
     "sonarr": sonarr_client, "radarr": radarr_client, "seerr": seerr_client, "nzbget": nzbget_client,
-    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client,
+    "sabnzbd": sabnzbd_client, "dispatcharr": dispatcharr_client, "reelhound": reelhound_client,
 }
 _IMPLEMENTED_TYPES = set(_DETAIL_CLIENTS)
 
@@ -146,7 +146,7 @@ async def create_service(body: ServiceCreate, admin: AdminUser, db: aiosqlite.Co
         )
     # Refuse a definite type mismatch (e.g. a Radarr URL saved as Sonarr).
     # An unreachable service still saves — it may just be down right now.
-    if body.api_key and body.type != "dispatcharr":
+    if body.api_key and body.type not in ("dispatcharr", "reelhound"):
         actual = await arr_http.detect_app(body.base_url, body.api_key)
         if not actual and await seerr_client.looks_like_seerr(body.base_url):
             actual = "Seerr"
