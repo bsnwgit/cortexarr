@@ -3,7 +3,7 @@
 ## Adding a monitored service
 
 User menu → **Settings** → **Services** → **New service**. Pick a
-type (Sonarr, Radarr, Seerr, NZBGet, SABnzbd, or Dispatcharr), give it a name, base URL,
+type (Sonarr, Radarr, Seerr, NZBGet, SABnzbd, Dispatcharr, or ReelHound), give it a name, base URL,
 and API key, then
 **Test connection** before saving — this checks the URL and key actually
 work, and that the URL really is the type you picked. The API key is under
@@ -25,7 +25,17 @@ one in Dispatcharr). Either is stored encrypted. Whatever that Dispatcharr
 account is allowed to do is the most Cortexarr can do. Its health shows
 **Warning** when an active M3U account or EPG source Dispatcharr itself marks
 as errored. A Dispatcharr service doesn't appear on the Dashboard,
-Statistics or Tracking — it has its own **Live TV** tab.
+Statistics or Tracking — it has its own **Live TV** tab. The tab shows only
+while a Dispatcharr service is enabled.
+
+ReelHound uses a **monitoring key**: in ReelHound, open **Admin › Security**
+and create one under **Monitoring key** (it is shown once), then paste it here.
+The key can only read indexing status. Health shows **Warning** when an
+indexing job has failed or a worker reports a heat problem; a pause alone is not
+a warning. Alert rules for Warning and Unreachable apply to it like any other
+service. A ReelHound service doesn't appear on the Dashboard, Statistics or
+Tracking; it has its own **ReelHound** tab. Over plain http the key travels
+unencrypted on your network.
 
 Seerr has no health endpoint of its own; its status shows **Warning** when
 Seerr reports an available update or a pending restart.

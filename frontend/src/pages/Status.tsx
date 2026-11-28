@@ -119,8 +119,8 @@ export default function Status() {
         if (cancelled) return
         setServices(
           list
-            // Live TV has no statistics page; it has its own tab.
-            .filter((s) => s.enabled && s.type !== 'dispatcharr')
+            // Live TV and ReelHound have no statistics page; each has its own.
+            .filter((s) => s.enabled && s.type !== 'dispatcharr' && s.type !== 'reelhound')
             .sort((a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || a.name.localeCompare(b.name)),
         )
       })

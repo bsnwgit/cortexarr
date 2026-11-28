@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import clsx from 'clsx'
 import UserMenu from './UserMenu'
 import CortexarrLogo from './icons/CortexarrLogo'
@@ -14,10 +14,16 @@ const TABS = [
   { to: '/', label: 'Dashboard' },
   { to: '/tracking', label: 'Tracking' },
   // { to: '/duplicates' } is added below, only while a scan has found something.
-  { to: '/livetv', label: 'Live TV' },
   { to: '/alerts', label: 'Notifications' },
   { to: '/history', label: 'History' },
   { to: '/status', label: 'Statistics' },
+]
+
+// Tabs for services outside the pipeline, set apart at the right of the row.
+// Each shows only while a service of its type is enabled.
+const SERVICE_TABS = [
+  { to: '/livetv', label: 'Live TV', type: 'dispatcharr' },
+  { to: '/reelhound', label: 'ReelHound', type: 'reelhound' },
 ]
 
 export default function Layout() {
@@ -25,6 +31,16 @@ export default function Layout() {
   // wrong zone first. A failed load falls back to the browser's own zone.
   const [zoneReady, setZoneReady] = useState(false)
   const { total: duplicateCount } = useDuplicates()
+  // Re-read on each page change, so adding or disabling a service shows without a reload.
+  const { pathname } = useLocation()
+  const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    api
+      .get<{ type: string; enabled: boolean }[]>('/services/')
+      .then((list) => setEnabledTypes(new Set(list.filter((s) => s.enabled).map((s) => s.type))))
+      .catch(() => {}) // keep the last known tabs
+  }, [pathname])
+  const serviceTabs = SERVICE_TABS.filter((t) => enabledTypes.has(t.type))
   useEffect(() => {
     api
       .get<{ timezone?: string }>('/settings/')
@@ -45,13 +61,19 @@ export default function Layout() {
             <UserMenu />
           </div>
           <nav className="flex gap-1 overflow-x-auto pb-2 -mb-px">
-            {[...TABS.slice(0, 2), ...(duplicateCount > 0 ? [{ to: '/duplicates', label: `Duplicates (${duplicateCount})` }] : []), ...TABS.slice(2)].map((tab) => (
+            {[
+              ...TABS.slice(0, 2),
+              ...(duplicateCount > 0 ? [{ to: '/duplicates', label: `Duplicates (${duplicateCount})` }] : []),
+              ...TABS.slice(2),
+              ...serviceTabs,
+            ].map((tab) => (
               <NavLink
                 key={tab.to}
                 to={tab.to}
                 className={({ isActive }) =>
                   clsx(
                     'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
+                    tab.to === serviceTabs[0]?.to && 'ml-auto',
                     isActive
                       ? 'bg-violet-600/20 text-violet-300 border border-violet-600/40'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent',

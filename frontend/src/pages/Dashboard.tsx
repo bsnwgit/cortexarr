@@ -6,8 +6,8 @@ import PageSpinner from '../components/PageSpinner'
 import { useDuplicates } from '../utils/useDuplicates'
 
 const FULL_WIDTH_TYPES = new Set(['seerr'])
-// Live TV has its own page; the dashboard is the media pipeline.
-const NOT_IN_PIPELINE = new Set(['dispatcharr'])
+// The dashboard is the media pipeline. Live TV has its own page; ReelHound isn't part of the pipeline.
+const NOT_IN_PIPELINE = new Set(['dispatcharr', 'reelhound'])
 
 // One card per monitored service — Sonarr's shows fan art from whatever
 // it's currently downloading plus state pills (active/queue/missing), not

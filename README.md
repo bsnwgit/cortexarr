@@ -46,6 +46,9 @@ leaving the page.
   channel's name, number or group; refresh M3U accounts and EPG sources, and
   add, edit or delete them (admins). Signs in with a username and password
   or an API key, your choice per service.
+- **ReelHound** — indexing status for ReelHound (search across a Plex
+  library): job counts, pause reason and worker health, with alerts for failed
+  jobs and heat problems. Read-only.
 - **Duplicate files** — each Sonarr and Radarr service can look through every
   folder in its own library, using nothing but its connection (no SSH, no mount): Radarr flags a movie
   folder with more than one video file, Sonarr an episode code like `S03E02` held
@@ -157,7 +160,7 @@ Native install:
 
 Docker: just Docker and Compose — the image builds the frontend itself.
 
-Either way: any of Sonarr, Radarr, Seerr, NZBGet, SABnzbd, or Dispatcharr — add only
+Either way: any of Sonarr, Radarr, Seerr, NZBGet, SABnzbd, Dispatcharr, or ReelHound — add only
 what you run.
 
 ## Install

@@ -232,10 +232,11 @@ export default function Services() {
                 <option value="nzbget">NZBGet</option>
                 <option value="sabnzbd">SABnzbd</option>
                 <option value="dispatcharr">Dispatcharr</option>
+                <option value="reelhound">ReelHound</option>
               </select>
             </Field>
             <Field label="Base URL">
-              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080, dispatcharr: 9191 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
+              <input className="input" placeholder={`http://192.168.1.50:${({ radarr: 7878, seerr: 5055, nzbget: 6789, sabnzbd: 8080, dispatcharr: 9191, reelhound: 8770 } as Record<string, number>)[form.type] ?? 8989}`} value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} />
             </Field>
             {form.type === 'dispatcharr' && (
               <Field label="Sign in with">
@@ -255,7 +256,7 @@ export default function Services() {
                 </Field>
               </>
             ) : (
-              <Field label="API key">
+              <Field label={form.type === 'reelhound' ? 'Monitoring key' : 'API key'}>
                 <input className="input" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} />
               </Field>
             )}
